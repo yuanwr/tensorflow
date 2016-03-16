@@ -1,6 +1,10 @@
 # Description:
 # Op kernel implementations for TensorFlow.
-
+#
+# Note: Any test that uses GPU support and which we would like to
+# benchmark should be linked statically so that it can be executed
+# from a py_binary or cuda_py_test test logger.
+#
 package(default_visibility = ["//visibility:public"])
 
 licenses(["notice"])  # Apache 2.0
@@ -11,10 +15,12 @@ load(
     "tf_cc_tests",
     "tf_kernel_libraries",
     "tf_kernel_library",
+    "cc_header_only_library",
 )
 load(
     "//tensorflow/core:platform/default/build_config.bzl",
     "tf_proto_library",
+    "tf_kernel_tests_linkstatic",
 )
 
 # Public support libraries ----------------------------------------------------
@@ -110,6 +116,7 @@ cc_library(
 
 tf_cc_test(
     name = "ops_util_test",
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     deps = [
         ":ops_util",
         "//tensorflow/core:test",
@@ -194,11 +201,16 @@ cc_library(
 cc_library(
     name = "bounds_check",
     hdrs = ["bounds_check.h"],
-    visibility = ["//visibility:private"],
+    visibility = ["//tensorflow:__subpackages__"],
     deps = [
         "//tensorflow/core:framework",
         "//third_party/eigen3",
     ],
+)
+
+cc_header_only_library(
+    name = "bounds_check_lib",
+    deps = [":bounds_check"],
 )
 
 # OpKernel libraries ----------------------------------------------------------
@@ -216,6 +228,7 @@ tf_kernel_libraries(
         "gather_op",
         "identity_op",
         "listdiff_op",
+        "mirror_pad_op",
         "one_hot_op",
         "pack_op",
         "pad_op",
@@ -252,6 +265,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "concat_op_test",
         "constant_op_test",
@@ -316,6 +330,7 @@ cc_library(
 
 tf_cc_test(
     name = "range_sampler_test",
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     deps = [
         ":range_sampler",
         "//tensorflow/core:framework",
@@ -350,6 +365,7 @@ tf_kernel_library(
 
 tf_cc_test(
     name = "control_flow_ops_test",
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     deps = [
         ":control_flow_ops",
         ":ops_testutil",
@@ -398,6 +414,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "dynamic_partition_op_test",
         "dynamic_stitch_op_test",
@@ -488,6 +505,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "restore_op_test",
         "save_op_test",
@@ -536,6 +554,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "adjust_contrast_op_benchmark_test",
         "adjust_contrast_op_test",
@@ -618,6 +637,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "logging_ops_test",
         "summary_image_op_test",
@@ -668,6 +688,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "cast_op_test",
         "cross_op_test",
@@ -753,6 +774,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "lrn_op_test",
         "nn_ops_test",
@@ -836,6 +858,7 @@ tf_kernel_library(
 
 tf_cc_test(
     name = "random_op_test",
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     deps = [
         ":random_ops",
         "//tensorflow/core:framework",
@@ -881,6 +904,7 @@ tf_kernel_libraries(
 )
 
 tf_cc_tests(
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     tests = [
         "sparse_tensor_dense_matmul_op_test",
         "sparse_to_dense_op_test",
@@ -921,6 +945,7 @@ tf_kernel_libraries(
 
 tf_cc_test(
     name = "scatter_op_test",
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     deps = [
         ":ops_testutil",
         ":ops_util",
@@ -959,6 +984,7 @@ tf_kernel_library(
 
 tf_cc_test(
     name = "training_ops_test",
+    linkstatic = tf_kernel_tests_linkstatic(),  # Required for benchmarking
     deps = [
         ":ops_util",
         ":training_ops",

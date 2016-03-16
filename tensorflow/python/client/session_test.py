@@ -25,6 +25,7 @@ import numpy as np
 import six
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
+from tensorflow.core.framework import step_stats_pb2
 from tensorflow.core.lib.core import error_codes_pb2
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.client import session
@@ -685,7 +686,8 @@ class SessionTest(test_util.TensorFlowTestCase):
                     dtypes.int8,
                     dtypes.int64,
                     dtypes.bool,
-                    dtypes.complex64]:
+                    dtypes.complex64,
+                    dtypes.complex128]:
         for shape in [(32, 4, 128), (37,), (2, 0, 6), (0, 0, 0)]:
           np_dtype = dtype.as_numpy_dtype
 
@@ -696,6 +698,8 @@ class SessionTest(test_util.TensorFlowTestCase):
 
           if dtype == dtypes.bool:
             np_array = np_array > 0
+          elif dtype == dtypes.complex64:
+            np_array = np.sqrt(np_array.astype(np_dtype))
           elif dtype == dtypes.complex64:
             np_array = np.sqrt(np_array.astype(np_dtype))
           else:
@@ -905,6 +909,30 @@ class SessionTest(test_util.TensorFlowTestCase):
       a = constant_op.constant(1.0, dtypes.float32, name='a')
       with self.assertRaisesRegexp(TypeError, "Cannot interpret feed_dict"):
         sess.run(a, feed_dict={'a': [2.0]})
+
+  def testPerStepTrace(self):
+    run_options = config_pb2.RunOptions(
+        trace_level=config_pb2.RunOptions.FULL_TRACE)
+    run_outputs = config_pb2.RunOutputs()
+
+    with ops.device('/cpu:0'):
+      with session.Session() as sess:
+        sess.run(constant_op.constant(1.0))
+        self.assertTrue(not run_outputs.HasField('step_stats'))
+
+        sess.run(constant_op.constant(1.0), run_outputs=run_outputs)
+        self.assertTrue(not run_outputs.HasField('step_stats'))
+
+        sess.run(constant_op.constant(1.0),
+                 options=run_options,
+                 run_outputs=run_outputs)
+        self.assertTrue(run_outputs.HasField('step_stats'))
+
+        step_stats = step_stats_pb2.StepStats()
+        self.assertEquals(len(step_stats.dev_stats), 0)
+
+        step_stats.CopyFrom(run_outputs.step_stats)
+        self.assertEquals(len(step_stats.dev_stats), 1)
 
 if __name__ == '__main__':
   googletest.main()
