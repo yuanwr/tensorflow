@@ -1,4 +1,4 @@
-#  Copyright 2015-present Scikit Flow Authors. All Rights Reserved.
+#  Copyright 2015-present The Scikit Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -11,6 +11,9 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 import numpy as np
 from sklearn import metrics
@@ -64,9 +67,8 @@ classifier = skflow.TensorFlowRNNClassifier(rnn_size=EMBEDDING_SIZE,
     num_layers=1, bidirectional=False, sequence_length=None,
     steps=1000, optimizer='Adam', learning_rate=0.01, continue_training=True)
 
-# Continously train for 1000 steps & predict on test set.
+# Continuously train for 1000 steps & predict on test set.
 while True:
     classifier.fit(X_train, y_train, logdir='/tmp/tf_examples/word_rnn')
     score = metrics.accuracy_score(y_test, classifier.predict(X_test))
     print('Accuracy: {0:f}'.format(score))
-

@@ -37,6 +37,8 @@ from tensorflow.core.protobuf import queue_runner_pb2
 from tensorflow.python.framework import function
 from tensorflow.python.platform import gfile
 from tensorflow.python.training import saver as saver_module
+from tensorflow.python import pywrap_tensorflow
+from tensorflow.python.util import compat
 
 
 def _TestDir(test_name):
@@ -522,6 +524,19 @@ class MaxToKeepTest(tf.test.TestCase):
       s2 = save2.save(sess, os.path.join(save_dir2, "s2"))
       self.assertEqual([], save2.last_checkpoints)
       self.assertTrue(gfile.Exists(s2))
+
+  def testNoMetaGrap(self):
+    save_dir = _TestDir("no_meta_graph")
+
+    with self.test_session() as sess:
+      v = tf.Variable(10.0, name="v")
+      save = tf.train.Saver({"v": v})
+      tf.initialize_all_variables().run()
+
+      s1 = save.save(sess, os.path.join(save_dir, "s1"),
+                     write_meta_graph=False)
+      self.assertTrue(gfile.Exists(s1))
+      self.assertFalse(gfile.Exists(save._MetaGraphFilename(s1)))
 
 
 class KeepCheckpointEveryNHoursTest(tf.test.TestCase):
@@ -1156,6 +1171,49 @@ class MetaGraphTest(tf.test.TestCase):
     # The stripped op list should contain just Const.
     op_list = tf.contrib.util.stripped_op_list_for_graph(graph)
     self.assertEquals(["Const"], [op.name for op in op_list.op])
+
+
+class CheckpointReaderTest(tf.test.TestCase):
+
+  def testDebugString(self):
+    save_path = os.path.join(self.get_temp_dir(), "ckpt_for_debug_string")
+    with self.test_session() as sess:
+      # Builds a graph.
+      v0 = tf.Variable([[1, 2, 3], [4, 5, 6]], dtype=tf.float32, name="v0")
+      v1 = tf.Variable([[[1], [2]], [[3], [4]], [[5], [6]]], dtype=tf.float32,
+                       name="v1")
+      save = tf.train.Saver({"v0": v0, "v1": v1})
+      tf.initialize_all_variables().run()
+      # Saves a checkpoint.
+      save.save(sess, save_path)
+
+      # Creates a reader.
+      reader = tf.train.NewCheckpointReader(save_path)
+      # Verifies that the tensors exist.
+      self.assertTrue(reader.has_tensor("v0"))
+      self.assertTrue(reader.has_tensor("v1"))
+      debug_string = reader.debug_string()
+      # Verifies that debug string contains the right strings.
+      self.assertTrue(compat.as_bytes("v0 (DT_FLOAT) [2,3]") in debug_string)
+      self.assertTrue(compat.as_bytes("v1 (DT_FLOAT) [3,2,1]") in debug_string)
+      # Verifies get_variable_to_shape_map() returns the correct information.
+      var_map = reader.get_variable_to_shape_map()
+      self.assertEquals([2, 3], var_map["v0"])
+      self.assertEquals([3, 2, 1], var_map["v1"])
+      # Verifies get_tensor() returns the tensor value.
+      v0_tensor = reader.get_tensor("v0")
+      v1_tensor = reader.get_tensor("v1")
+      self.assertAllEqual(v0.eval(), v0_tensor)
+      self.assertAllEqual(v1.eval(), v1_tensor)
+      # Verifies get_tensor() fails for non-existent tensors.
+      with self.assertRaisesRegexp(pywrap_tensorflow.StatusNotOK,
+                                   "Not found"):
+        reader.get_tensor("v3")
+
+  def testNonexistentPath(self):
+    with self.assertRaisesRegexp(pywrap_tensorflow.StatusNotOK,
+                                 "Unsuccessful TensorSliceReader"):
+      tf.train.NewCheckpointReader("non-existent")
 
 
 if __name__ == "__main__":

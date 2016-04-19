@@ -71,6 +71,9 @@ class TensorShape {
   /// Appends all the dimensions from `shape`.
   void AppendShape(const TensorShape& shape);
 
+  // Maximum number of dimensions in a tensor.
+  static constexpr int MaxDimensions() { return 255; }
+
   /// \brief Insert a dimension somewhere in the `TensorShape`.
   /// REQUIRES: `0 <= d <= dims()`
   /// REQUIRES: `size >= 0`
@@ -142,6 +145,9 @@ class TensorShape {
   void SlowCopyFrom(const TensorShape& b);
 
   void RecomputeNumElements();
+
+  void CheckDimsEqual(int NDIMS) const;
+  void CheckDimsAtLeast(int NDIMS) const;
 
   // We use 16 bytes to represent a TensorShape.  Because we need to
   // be able to support full 64-bit dimension sizes and an arbitrary
@@ -266,16 +272,15 @@ class TensorShapeUtils {
 
 template <int NDIMS>
 Eigen::DSizes<Eigen::DenseIndex, NDIMS> TensorShape::AsEigenDSizes() const {
-  CHECK_EQ(NDIMS, dims()) << "Asking for tensor of " << NDIMS
-                          << " for a tensor of " << dims() << " dimensions";
+  CheckDimsEqual(NDIMS);
   return AsEigenDSizesWithPadding<NDIMS>();
 }
 
 template <int NDIMS>
 Eigen::DSizes<Eigen::DenseIndex, NDIMS> TensorShape::AsEigenDSizesWithPadding()
     const {
-  CHECK_GE(NDIMS, dims()) << "Asking for tensor of " << NDIMS
-                          << " for a tensor of " << dims() << " dimensions";
+  CheckDimsAtLeast(NDIMS);
+  static_assert(NDIMS <= TensorShape::MaxDimensions(), "Too many dimensions");
   Eigen::DSizes<Eigen::DenseIndex, NDIMS> dsizes;
   for (int d = 0; d < dims(); d++) {
     dsizes[d] = dim_size(d);

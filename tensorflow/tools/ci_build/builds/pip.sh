@@ -19,7 +19,8 @@
 # The PIP installation is done using the --user flag.
 #
 # Usage:
-#   pip.sh CONTAINER_TYPE [--test_tutorials]
+#   pip.sh CONTAINER_TYPE [--mavx] [--mavx2]
+#                         [--test_tutorials] [--integration_tests]
 #
 # When executing the Python unit tests, the script obeys the shell
 # variables: TF_BUILD_BAZEL_CLEAN, TF_BUILD_INSTALL_EXTRA_PIP_PACKAGES,
@@ -39,9 +40,14 @@
 # If NO_TEST_ON_INSTALL has any non-empty and non-0 value, the test-on-install
 # part will be skipped.
 #
-# I the --test_tutorials flag is set, it will cause the script to run the
+# Use --mavx or --mavx2 to let bazel use --copt=-mavx or --copt=-mavx2 options
+# while building the pip package, respectively.
+#
+# If the --test_tutorials flag is set, it will cause the script to run the
 # tutorial tests (see test_tutorials.sh) after the PIP
-# installation and the Python unit tests-on-install step.
+# installation and the Python unit tests-on-install step. Likewise,
+# --integration_tests will cause the integration tests (integration_tests.sh)
+# to run.
 #
 
 INSTALL_EXTRA_PIP_PACKAGES=${TF_BUILD_INSTALL_EXTRA_PIP_PACKAGES}
@@ -70,28 +76,40 @@ if [[ ! -z "${TF_BUILD_BAZEL_CLEAN}" ]] && \
 fi
 
 DO_TEST_TUTORIALS=0
-for ARG in $@; do
-  if [[ "${ARG}" == "--test_tutorials" ]]; then
+DO_INTEGRATION_TESTS=0
+MAVX_FLAG=""
+while true; do
+  if [[ "${1}" == "--test_tutorials" ]]; then
     DO_TEST_TUTORIALS=1
+  elif [[ "${1}" == "--integration_tests" ]]; then
+    DO_INTEGRATION_TESTS=1
+  elif [[ "${1}" == "--mavx" ]]; then
+    MAVX_FLAG="--copt=-mavx"
+  elif [[ "${1}" == "--mavx2" ]]; then
+    MAVX_FLAG="--copt=-mavx2"
+  fi
+ 
+  shift
+  if [[ -z "${1}" ]]; then
+    break
   fi
 done
 
-PIP_BUILD_TARGET="//tensorflow/tools/pip_package:build_pip_package"
-if [[ ${CONTAINER_TYPE} == "cpu" ]]; then
-  bazel build -c opt ${PIP_BUILD_TARGET} || die "Build failed."
-elif [[ ${CONTAINER_TYPE} == "gpu" ]]; then
-  bazel build -c opt --config=cuda ${PIP_BUILD_TARGET} || die "Build failed."
-else
-  die "Unrecognized container type: \"${CONTAINER_TYPE}\""
+if [[ ! -z "${MAVX_FLAG}" ]]; then
+  echo "Using MAVX flag: ${MAVX_FLAG}"
 fi
 
-echo "PY_TEST_WHITELIST: ${PY_TEST_WHITELIST}"
-echo "PY_TEST_BLACKLIST: ${PY_TEST_BLACKLIST}"
-echo "PY_TEST_GPU_BLACKLIST: ${PY_TEST_GPU_BLACKLIST}"
-
-# Append GPU-only test blacklist
-if [[ ${CONTAINER_TYPE} == "gpu" ]]; then
-  PY_TEST_BLACKLIST="${PY_TEST_BLACKLIST}:${PY_TEST_GPU_BLACKLIST}"
+PIP_BUILD_TARGET="//tensorflow/tools/pip_package:build_pip_package"
+GPU_FLAG=""
+if [[ ${CONTAINER_TYPE} == "cpu" ]]; then
+  bazel build -c opt ${MAVX_FLAG} ${PIP_BUILD_TARGET} || \
+      die "Build failed."
+elif [[ ${CONTAINER_TYPE} == "gpu" ]]; then
+  bazel build -c opt --config=cuda ${MAVX_FLAG} ${PIP_BUILD_TARGET} || \
+      die "Build failed."
+  GPU_FLAG="--gpu"
+else
+  die "Unrecognized container type: \"${CONTAINER_TYPE}\""
 fi
 
 # If still in a virtualenv, deactivate it first
@@ -163,10 +181,13 @@ source "${VENV_DIR}/bin/activate" || \
     die "FAILED: Unable to activate virtualenv"
 
 
-# Install the pip file in virtual env
-pip install -v --force-reinstall ${WHL_PATH} \
-&& echo "Successfully installed pip package ${WHL_PATH}" \
-|| die "pip install (without --upgrade) FAILED"
+# Install the pip file in virtual env (plus missing dependencies)
+pip install -v ${WHL_PATH} || die "pip install (without --upgrade) FAILED"
+# Force tensorflow reinstallation. Otherwise it may not get installed from
+# last build if it had the same version number as previous build.
+pip install -v --upgrade --no-deps --force-reinstall ${WHL_PATH} || \
+    die "pip install (forcing to reinstall tensorflow) FAILED"
+echo "Successfully installed pip package ${WHL_PATH}"
 
 # Install extra pip packages required by the test-on-install
 for PACKAGE in ${INSTALL_EXTRA_PIP_PACKAGES}; do
@@ -188,13 +209,19 @@ fi
 # Call test_installation.sh to perform test-on-install
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-"${DIR}/test_installation.sh" --virtualenv || \
+"${DIR}/test_installation.sh" --virtualenv ${GPU_FLAG} || \
     die "PIP tests-on-install FAILED"
 
 # Optional: Run the tutorial tests
 if [[ "${DO_TEST_TUTORIALS}" == "1" ]]; then
   "${DIR}/test_tutorials.sh" --virtualenv || \
       die "PIP tutorial tests-on-install FAILED"
+fi
+
+# Optional: Run integration tests
+if [[ "${DO_INTEGRATION_TESTS}" == "1" ]]; then
+  "${DIR}/integration_tests.sh" --virtualenv || \
+      die "Integration tests on install FAILED"
 fi
 
 deactivate || \

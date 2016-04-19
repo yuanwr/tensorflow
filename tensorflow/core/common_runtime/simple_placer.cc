@@ -199,6 +199,7 @@ class ColocationGraph {
   Status ColocateNodes(const Node& x, const Node& y) {
     int x_root = FindRoot(x.id());
     int y_root = FindRoot(y.id());
+    Status s;
     if (x_root != y_root) {
       // Merge the sets by swinging the parent pointer of the smaller
       // tree to point to the root of the larger tree. Together with
@@ -236,9 +237,14 @@ class ColocationGraph {
       // TODO(mrry): Consider enriching the error message by pointing
       // out which nodes have the explicit partial device
       // specifications that caused this conflict.
-      TF_RETURN_IF_ERROR(DeviceNameUtils::MergeDevNames(
+      s = DeviceNameUtils::MergeDevNames(
           &members_[new_root].device_name, members_[old_root].device_name,
-          options_ == nullptr || options_->config.allow_soft_placement()));
+          options_ == nullptr || options_->config.allow_soft_placement());
+      if (!s.ok()) {
+        return errors::InvalidArgument("Cannot colocate nodes '", x.name(),
+                                       "' and '", y.name(), ": ",
+                                       s.error_message());
+      }
 
       // Ensure that the common root has at least one supported device
       // type, by computing the intersection of
@@ -315,11 +321,20 @@ class ColocationGraph {
             device_set_->FindMatchingDevices(specified_device_name,
                                              &devices_matching_nodedef);
             if (devices_matching_nodedef.empty()) {
+              // Sometimes it is almost impossible to understand the problem
+              // without a list of available devices.
+              std::vector<string> device_names;
+              for (const Device* device : device_set_->devices()) {
+                device_names.push_back(device->name());
+              }
+              std::sort(device_names.begin(), device_names.end());
+
               return errors::InvalidArgument(
                   "Could not satisfy explicit device specification '",
                   node->def().device(),
                   "' because no devices matching that specification "
-                  "are registered in this process");
+                  "are registered in this process; available devices: ",
+                  str_util::Join(device_names, ", "));
             } else if (specified_device_name.has_type) {
               return errors::InvalidArgument(
                   "Could not satisfy explicit device specification '",
@@ -600,11 +615,13 @@ Status SimplePlacer::Run() {
           IsRefType(node->input_type(edge->dst_input()))) {
         status = colocation_graph.ColocateNodes(*edge->src(), *node);
         if (!status.ok()) {
-          return AttachDef(
-              errors::InvalidArgument("Cannot satisfy colocation constraint "
-                                      "implied by reference connection: ",
-                                      status.error_message()),
-              node->def());
+          return AttachDef(errors::InvalidArgument(
+                               "Nodes were connected by a "
+                               "reference connection (requiring them to "
+                               "be on the same device), but the two nodes "
+                               "were assigned two different devices: ",
+                               status.error_message()),
+                           node->def());
         }
       }
     }

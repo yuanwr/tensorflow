@@ -32,6 +32,7 @@ from tensorflow.python.ops import common_shapes
 from tensorflow.python.ops import gen_nn_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import random_ops
+# go/tf-wildcard-import
 # pylint: disable=wildcard-import
 from tensorflow.python.ops.gen_nn_ops import *
 # pylint: enable=wildcard-import
@@ -118,7 +119,7 @@ def bias_add(value, bias, data_format=None, name=None):
     bias: A 1-D `Tensor` with size matching the last dimension of `value`.
       Must be the same type as `value` unless `value` is a quantized type,
       in which case a different quantized type may be used.
-    data_format: A string. 'NHWC' and 'NCHW" are supported.
+    data_format: A string. 'NHWC' and 'NCHW' are supported.
     name: A name for the operation (optional).
 
   Returns:
@@ -195,10 +196,8 @@ def softmax_cross_entropy_with_logits(logits, labels, name=None):
   can be a dog or a truck, but not both.
 
   **NOTE:**  While the classes are mutually exclusive, their probabilities
-  need not be.  All that is required is that each row of `labels` is
-  a valid probability distribution.  If using exclusive `labels`
-  (wherein one and only one class is true at a time), see
-  `sparse_softmax_cross_entropy_with_logits`.
+  need not be. If using exclusive `labels` (wherein one and only one class is
+  true at a time), see `sparse_softmax_cross_entropy_with_logits`.
 
   **WARNING:** This op expects unscaled logits, since it performs a `softmax`
   on `logits` internally for efficiency.  Do not call this op with the
@@ -209,7 +208,9 @@ def softmax_cross_entropy_with_logits(logits, labels, name=None):
 
   Args:
     logits: Unscaled log probabilities.
-    labels: Each row `labels[i]` must be a valid probability distribution.
+    labels: Each row `labels[i]` must be a valid probability distribution or
+        all zeros. If all zeros, the corresponding loss will be `0`, regardless
+        of the contents of `logits[i]`.
     name: A name for the operation (optional).
 
   Returns:
@@ -238,18 +239,20 @@ def sparse_softmax_cross_entropy_with_logits(logits, labels, name=None):
   a probability distribution for each entry, see
   `softmax_cross_entropy_with_logits`.
 
-  **WARNING:** This op expects unscaled logits, since it performs a `softmax`
+  **WARNING:** This op expects unscaled logits, since it performs a softmax
   on `logits` internally for efficiency.  Do not call this op with the
   output of `softmax`, as it will produce incorrect results.
 
-  `logits` and must have the shape `[batch_size, num_classes]`
-  and the dtype (either `float32` or `float64`).
+  `logits` must have the shape `[batch_size, num_classes]`
+  and dtype `float32` or `float64`.
 
-  `labels` must have the shape `[batch_size]` and the dtype `int64`.
+  `labels` must have the shape `[batch_size]` and dtype `int32` or `int64`.
 
   Args:
     logits: Unscaled log probabilities.
-    labels: Each entry `labels[i]` must be an index in `[0, num_classes)`.
+    labels: Each entry `labels[i]` must be an index in `[0, num_classes)` or
+        `-1`. If `-1`, the corresponding loss will be `0`, regardless
+        of the contents of `logits[i]`.
     name: A name for the operation (optional).
 
   Returns:
@@ -299,7 +302,7 @@ def avg_pool(value, ksize, strides, padding, data_format="NHWC", name=None):
       The stride of the sliding window for each dimension of the
       input tensor.
     padding: A string, either `'VALID'` or `'SAME'`. The padding algorithm.
-    data_format: A string. 'NHWC' and 'NCHW" are supported.
+    data_format: A string. 'NHWC' and 'NCHW' are supported.
     name: Optional name for the operation.
 
   Returns:
@@ -324,7 +327,7 @@ def max_pool(value, ksize, strides, padding, data_format="NHWC", name=None):
     strides: A list of ints that has length >= 4.  The stride of the sliding
       window for each dimension of the input tensor.
     padding: A string, either `'VALID'` or `'SAME'`. The padding algorithm.
-    data_format: A string. 'NHWC' and 'NCHW" are supported.
+    data_format: A string. 'NHWC' and 'NCHW' are supported.
     name: Optional name for the operation.
 
   Returns:
@@ -378,6 +381,10 @@ def _LRNGradShape(op):
 
 
 ops.RegisterShape("Softmax")(
+    common_shapes.unchanged_shape_with_rank(2))
+
+
+ops.RegisterShape("LogSoftmax")(
     common_shapes.unchanged_shape_with_rank(2))
 
 

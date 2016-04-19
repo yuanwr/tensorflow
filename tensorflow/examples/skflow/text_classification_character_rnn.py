@@ -1,4 +1,4 @@
-#  Copyright 2015-present Scikit Flow Authors. All Rights Reserved.
+#  Copyright 2015-present The Scikit Flow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -23,6 +23,9 @@ This model is similar to one described in this paper:
 and is somewhat alternative to the Lua code from here:
    https://github.com/zhangxiangxiao/Crepe
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
 import numpy as np
 from sklearn import metrics
@@ -65,9 +68,8 @@ def char_rnn_model(X, y):
 classifier = skflow.TensorFlowEstimator(model_fn=char_rnn_model, n_classes=15,
     steps=100, optimizer='Adam', learning_rate=0.01, continue_training=True)
 
-# Continuesly train for 1000 steps & predict on test set.
+# Continuously train for 1000 steps & predict on test set.
 while True:
     classifier.fit(X_train, y_train)
     score = metrics.accuracy_score(y_test, classifier.predict(X_test))
     print("Accuracy: %f" % score)
-

@@ -133,6 +133,25 @@ value: Attr `value` is the tensor to return.
 )doc");
 
 // --------------------------------------------------------------------------
+// TODO(mgubin): Update the doc when the freeze_graph script supports converting
+// into memmapped format.
+REGISTER_OP("ImmutableConst")
+    .Attr("dtype: type")
+    .Attr("shape: shape")
+    .Attr("memory_region_name: string")
+    .Output("tensor: dtype")
+    .Doc(R"doc(
+Returns immutable tensor from memory region.
+
+The current implementation memmaps the tensor from a file.
+
+dtype: Type of the returned tensor.
+shape: Shape of the returned tensor.
+memory_region_name: Name of readonly memory region used by the tensor, see
+  NewReadOnlyMemoryRegionFromFile in tensorflow::Env.
+)doc");
+
+// --------------------------------------------------------------------------
 REGISTER_OP("ZerosLike")
     .Input("x: T")
     .Output("y: T")
@@ -202,6 +221,144 @@ tf.diag_part(input) ==> [1, 2, 3, 4]
 
 input: Rank k tensor where k is 2, 4, or 6.
 diagonal: The extracted diagonal.
+
+)doc");
+
+// --------------------------------------------------------------------------
+REGISTER_OP("BatchMatrixDiag")
+    .Input("diagonal: T")
+    .Output("output: T")
+    .Attr("T: type")
+    .Doc(R"doc(
+Returns a batched diagonal tensor with a given batched diagonal values.
+
+Given a `diagonal`, this operation returns a tensor with the `diagonal` and
+everything else padded with zeros. The diagonal is computed as follows:
+
+Assume `diagonal` has `k` dimensions `[I, J, K, ..., N]`, then the output is a
+tensor of rank `k+1` with dimensions [I, J, K, ..., N, N]` where:
+
+`output[i, j, k, ..., m, n] = 1{m=n} * diagonal[i, j, k, ..., n]`.
+
+For example:
+
+```prettyprint
+# 'diagonal' is [[1, 2, 3, 4], [5, 6, 7, 8]]
+
+and diagonal.shape = (2, 4)
+
+tf.batch_matrix_diag(diagonal) ==> [[[1, 0, 0, 0]
+                                     [0, 2, 0, 0]
+                                     [0, 0, 3, 0]
+                                     [0, 0, 0, 4]],
+                                    [[5, 0, 0, 0]
+                                     [0, 6, 0, 0]
+                                     [0, 0, 7, 0]
+                                     [0, 0, 0, 8]]]
+
+which has shape (2, 4, 4)
+```
+
+diagonal: Rank `k`, where `k >= 1`.
+output: Rank `k+1`, with `output.shape = diagonal.shape + [diagonal.shape[-1]]`.
+)doc");
+
+// --------------------------------------------------------------------------
+REGISTER_OP("BatchMatrixDiagPart")
+    .Input("input: T")
+    .Output("diagonal: T")
+    .Attr("T: type")
+    .Doc(R"doc(
+Returns the batched diagonal part of a batched tensor.
+
+This operation returns a tensor with the `diagonal` part
+of the batched `input`. The `diagonal` part is computed as follows:
+
+Assume `input` has `k` dimensions `[I, J, K, ..., N, N]`, then the output is a
+tensor of rank `k - 1` with dimensions `[I, J, K, ..., N]` where:
+
+`diagonal[i, j, k, ..., n] = input[i, j, k, ..., n, n]`.
+
+The input must be at least a matrix.
+
+For example:
+
+```prettyprint
+# 'input' is [[[1, 0, 0, 0]
+               [0, 2, 0, 0]
+               [0, 0, 3, 0]
+               [0, 0, 0, 4]],
+              [[5, 0, 0, 0]
+               [0, 6, 0, 0]
+               [0, 0, 7, 0]
+               [0, 0, 0, 8]]]
+
+and input.shape = (2, 4, 4)
+
+tf.batch_matrix_diag_part(input) ==> [[1, 2, 3, 4], [5, 6, 7, 8]]
+
+which has shape (2, 4)
+```
+
+input: Rank `k` tensor where `k >= 2` and the last two dimensions are equal.
+diagonal: The extracted diagonal(s) having shape
+  `diagonal.shape = input.shape[:-1]`.
+)doc");
+
+// --------------------------------------------------------------------------
+REGISTER_OP("BatchMatrixBandPart")
+    .Input("input: T")
+    .Input("num_lower: int64")
+    .Input("num_upper: int64")
+    .Output("band: T")
+    .Attr("T: type")
+    .Doc(R"doc(
+Copy a tensor setting everything outside a central band in each innermost matrix
+to zero.
+
+The `band` part is computed as follows:
+Assume `input` has `k` dimensions `[I, J, K, ..., M, N]`, then the output is a
+tensor with the same shape where
+
+`band[i, j, k, ..., m, n] = in_band(m, n) * input[i, j, k, ..., m, n]`.
+
+The indicator function 'in_band(m, n)` is one if
+`(num_lower < 0 || (m-n) <= num_lower)) &&
+(num_upper < 0 || (n-m) <= num_upper)`, and zero otherwise.
+
+For example:
+
+```prettyprint
+# if 'input' is [[ 0,  1,  2, 3]
+                 [-1,  0,  1, 2]
+                 [-2, -1,  0, 1]
+                 [-3, -2, -1, 0]],
+
+tf.batch_matrix_band_part(input, 1, -1) ==> [[ 0,  1,  2, 3]
+                                             [-1,  0,  1, 2]
+                                             [ 0, -1,  0, 1]
+                                             [ 0,  0, -1, 0]],
+
+tf.batch_matrix_band_part(input, 2, 1) ==> [[ 0,  1,  0, 0]
+                                            [-1,  0,  1, 0]
+                                            [-2, -1,  0, 1]
+                                            [ 0, -2, -1, 0]]
+```
+
+Useful special cases:
+
+```prettyprint
+ tf.batch_matrix_band_part(input, 0, -1) ==> Upper triangular part.
+ tf.batch_matrix_band_part(input, -1, 0) ==> Lower triangular part.
+ tf.batch_matrix_band_part(input, 0, 0) ==> Diagonal.
+```
+
+input: Rank `k` tensor.
+num_lower: 0-D tensor. Number of subdiagonals to keep. If negative, keep entire
+           lower triangle.
+num_upper: 0-D tensor. Number of superdiagonals to keep. If negative, keep
+           entire upper triangle.
+band: Rank `k` tensor of the same shape as input. The extracted banded tensor.
 
 )doc");
 
@@ -386,6 +543,34 @@ this operation will permute `params` accordingly.
 <div style="width:70%; margin:auto; margin-bottom:10px; margin-top:20px;">
 <img style="width:100%" src="../../images/Gather.png" alt>
 </div>
+)doc");
+
+// --------------------------------------------------------------------------
+REGISTER_OP("GatherNd")
+    .Input("params: Tparams")
+    .Input("indices: Tindices")
+    .Output("output: Tparams")
+    .Attr("Tparams: type")
+    .Attr("Tindices: {int32,int64}")
+    .Doc(R"doc(
+Gather values from `params` according to `indices`.
+
+`indices` must be integer tensor, containing indices into `params`.
+It must be shape `[d_0, ..., d_N, R]` where `R` is the rank of `params`.
+The innermost dimension of `indices` (with length `R`) corresponds to the
+indices of `params`.
+
+Produces an output tensor with shape `[d_0, ..., d_{n-1}]` where:
+
+    output[i, j, k, ...] = params[indices[i, j, k, ..., :]]
+
+e.g. for `indices` a matrix:
+
+    output[i] = params[indices[i, :]]
+
+params: R-D.  The tensor from which to gather values.
+indices: (N+1)-D.  Index tensor having shape `[d_0, ..., d_N, R]`.
+output: N-D.  Values from `params` gathered from indices given by `indices`.
 )doc");
 
 // --------------------------------------------------------------------------
