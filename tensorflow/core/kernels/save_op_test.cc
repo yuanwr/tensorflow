@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ class SaveOpTest : public OpsTestBase {
             .Input(FakeInput())
             .Input(FakeInput({DT_BOOL, DT_INT32, DT_FLOAT, DT_DOUBLE, DT_QINT8,
                               DT_QINT32, DT_UINT8, DT_INT8, DT_INT16, DT_INT64,
-                              DT_STRING, DT_COMPLEX64}))
+                              DT_STRING, DT_COMPLEX64, DT_COMPLEX128, DT_HALF}))
             .Finalize(node_def()));
     TF_ASSERT_OK(InitOp());
   }
@@ -53,9 +53,10 @@ class SaveOpTest : public OpsTestBase {
 TEST_F(SaveOpTest, Simple) {
   const string filename = io::JoinPath(testing::TmpDir(), "tensor_simple");
   const string tensornames[] = {
-      "tensor_bool",  "tensor_int",    "tensor_float",  "tensor_double",
-      "tensor_qint8", "tensor_qint32", "tensor_uint8",  "tensor_int8",
-      "tensor_int16", "tensor_int64",  "tensor_string", "tensor_complex64"};
+      "tensor_bool",       "tensor_int",    "tensor_float",  "tensor_double",
+      "tensor_qint8",      "tensor_qint32", "tensor_uint8",  "tensor_int8",
+      "tensor_int16",      "tensor_int64",  "tensor_string", "tensor_complex64",
+      "tensor_complex128", "tensor_half"};
 
   MakeOp();
   // Add a file name
@@ -63,7 +64,7 @@ TEST_F(SaveOpTest, Simple) {
                    [&filename](int x) -> string { return filename; });
 
   // Add the tensor names
-  AddInput<string>(TensorShape({12}),
+  AddInput<string>(TensorShape({14}),
                    [&tensornames](int x) -> string { return tensornames[x]; });
 
   // Add a 1-d bool tensor
@@ -110,6 +111,15 @@ TEST_F(SaveOpTest, Simple) {
     return complex64(100 + x, 200 + x);
   });
 
+  // Add a 2-d complex128 tensor
+  AddInput<complex128>(TensorShape({2, 3}), [](int x) -> complex128 {
+    return complex128(100 + x, 200 + x);
+  });
+
+  // Add a 2-d half tensor
+  AddInput<Eigen::half>(TensorShape({2, 4}), [](int x) -> Eigen::half {
+    return static_cast<Eigen::half>(x) / Eigen::half(2);
+  });
   TF_ASSERT_OK(RunOpKernel());
 
   // Check that the checkpoint file is properly written
@@ -335,6 +345,44 @@ TEST_F(SaveOpTest, Simple) {
     for (int i = 0; i < 6; ++i) {
       EXPECT_EQ(100 + i, data[i].real());
       EXPECT_EQ(200 + i, data[i].imag());
+    }
+  }
+
+  {
+    // The 2-d complex128 tensor
+    TensorShape shape;
+    DataType type;
+    EXPECT_TRUE(reader.HasTensor("tensor_complex128", &shape, &type));
+    TensorShape expected({2, 3});
+    EXPECT_TRUE(shape.IsSameSize(expected));
+    EXPECT_EQ(DT_COMPLEX128, type);
+
+    // We expect the tensor value to be correct.
+    TensorSlice s = TensorSlice::ParseOrDie("-:-");
+    complex128 data[6];
+    EXPECT_TRUE(reader.CopySliceData("tensor_complex128", s, data));
+    for (int i = 0; i < 6; ++i) {
+      EXPECT_EQ(100 + i, data[i].real());
+      EXPECT_EQ(200 + i, data[i].imag());
+    }
+  }
+
+  {
+    // The 2-d half tensor
+    TensorShape shape;
+    DataType type;
+    EXPECT_TRUE(reader.HasTensor("tensor_half", &shape, &type));
+    TensorShape expected({2, 4});
+    EXPECT_TRUE(shape.IsSameSize(expected));
+    EXPECT_EQ(DT_HALF, type);
+
+    // We expect the tensor value to be correct.
+    TensorSlice s = TensorSlice::ParseOrDie("-:-");
+    Eigen::half data[8];
+    std::fill_n(data, 8, Eigen::half(0));
+    EXPECT_TRUE(reader.CopySliceData("tensor_half", s, data));
+    for (int i = 0; i < 8; ++i) {
+      EXPECT_EQ(static_cast<Eigen::half>(i) / Eigen::half(2), data[i]);
     }
   }
 }

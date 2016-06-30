@@ -387,6 +387,7 @@ filegroup(
     srcs = [
         "index.html",
         "paper-icon-button.html",
+        "paper-icon-button-light.html",
     ],
 )
 
@@ -528,6 +529,14 @@ filegroup(
     srcs = [
         "index.html",
         "paper-toolbar.html",
+    ],
+)
+
+filegroup(
+    name = "paper_tooltip",
+    srcs = [
+        "index.html",
+        "paper-tooltip.html",
     ],
 )
 

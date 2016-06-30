@@ -1,4 +1,4 @@
-/* Copyright 2016 Google Inc. All Rights Reserved.
+/* Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -310,7 +310,8 @@ Status GetSparseTensorShapes(const VarLenFeature& var_len_feature,
 }
 
 Status BatchExampleProtoToTensors(
-    const std::vector<Example>& examples, const std::vector<string>& names,
+    const std::vector<const Example*>& examples,
+    const std::vector<string>& names,
     const std::vector<FixedLenFeature>& fixed_len_features,
     const std::vector<VarLenFeature>& var_len_features, Allocator* allocator,
     std::vector<Tensor>* output_dense_values_tensor,
@@ -346,14 +347,14 @@ Status BatchExampleProtoToTensors(
   }
 
   // Temporary vector to hold sparse values.
-  std::vector<std::vector<Tensor>> sparse_values_tmp(batch_size);
+  std::vector<std::vector<Tensor>> sparse_values_tmp(var_len_features.size());
 
   for (int d = 0; d < var_len_features.size(); ++d) {
     sparse_values_tmp[d] = std::vector<Tensor>(batch_size);
   }
 
   for (int b = 0; b < examples.size(); ++b) {
-    const Example& ex = examples[b];
+    const Example& ex = *(examples[b]);
     const string& example_name = (has_names) ? names[b] : "<unknown>";
     SingleExampleProtoToTensors(
         ex, example_name, b, fixed_len_features, var_len_features,

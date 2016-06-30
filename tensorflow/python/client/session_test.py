@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ from six.moves import xrange  # pylint: disable=redefined-builtin
 from tensorflow.core.lib.core import error_codes_pb2
 from tensorflow.core.protobuf import config_pb2
 from tensorflow.python.client import session
+from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
@@ -35,7 +36,6 @@ from tensorflow.python.framework import tensor_util
 from tensorflow.python.framework import test_util
 from tensorflow.python.framework import versions
 from tensorflow.python.ops import array_ops
-from tensorflow.python.ops import constant_op
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import state_ops
@@ -98,6 +98,21 @@ class SessionTest(test_util.TensorFlowTestCase):
       inp = constant_op.constant(10.0, name='W1')
       self.assertAllEqual(inp.eval(), 10.0)
 
+  def testSessionInterOpThreadPool(self):
+    config = config_pb2.ConfigProto()
+    pool = config.session_inter_op_thread_pool.add()
+    with session.Session(config=config) as s:
+      inp = constant_op.constant(10.0, name='W1')
+      results = s.run([inp])
+      self.assertAllEqual([10.0], results)
+
+    pool = config.session_inter_op_thread_pool.add()
+    pool.num_threads = 1
+    with session.Session(config=config) as s:
+      inp = constant_op.constant(20.0, name='W2')
+      results = s.run([inp])
+      self.assertAllEqual([20.0], results)
+
   def testErrorsReported(self):
     with session.Session() as s:
       constant_op.constant(10.0, name='W1')
@@ -153,6 +168,18 @@ class SessionTest(test_util.TensorFlowTestCase):
       with self.assertRaisesOpError(exc_predicate):
         c.eval()
 
+  def testFetchNone(self):
+    with session.Session() as s:
+      a = constant_op.constant(1.0)
+      with self.assertRaises(TypeError):
+        s.run(None)
+      with self.assertRaises(TypeError):
+        s.run([None])
+      with self.assertRaises(TypeError):
+        s.run({'b': None})
+      with self.assertRaises(TypeError):
+        s.run({'a': a, 'b': None})
+
   def testFetchTensorObject(self):
     with session.Session() as s:
       a = constant_op.constant(1.0, shape=[1, 2])
@@ -167,6 +194,26 @@ class SessionTest(test_util.TensorFlowTestCase):
       a_val, b_val = s.run([a, b])  # Test multiple fetches.
       self.assertAllEqual([[1.0, 1.0]], a_val)
       self.assertAllEqual([[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]], b_val)
+      results_with_dict = s.run({'a': [a], 'b': b, 'z': [a, b]})
+      self.assertAllEqual([[1.0, 1.0]], results_with_dict['a'][0])
+      self.assertAllEqual([[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]],
+                          results_with_dict['b'])
+      self.assertAllEqual(results_with_dict['a'][0], results_with_dict['z'][0])
+      self.assertAllEqual(results_with_dict['b'], results_with_dict['z'][1])
+
+      # Test nested structures
+      results_with_nested_list = s.run([[[a, b], b], a, [a, b]])
+      self.assertAllEqual([[1.0, 1.0]], results_with_nested_list[0][0][0])
+      self.assertAllEqual([[2.0, 2.0, 2.0], [2.0, 2.0, 2.0]],
+                          results_with_nested_list[0][0][1])
+      self.assertAllEqual(results_with_nested_list[0][0][0],
+                          results_with_nested_list[1])
+      self.assertAllEqual(results_with_nested_list[1],
+                          results_with_nested_list[2][0])
+      self.assertAllEqual(results_with_nested_list[0][0][1],
+                          results_with_nested_list[0][1])
+      self.assertAllEqual(results_with_nested_list[0][1],
+                          results_with_nested_list[2][1])
 
   def testFetchScalar(self):
     with session.Session() as s:
@@ -184,6 +231,16 @@ class SessionTest(test_util.TensorFlowTestCase):
         xy, = s.run([tf_xy])
         self.assertEqual(scalar, type(xy))
         self.assertEqual(x + y, xy)
+        # Dict fetch
+        xy = s.run({'xy': tf_xy})['xy']
+        self.assertEqual(scalar, type(xy))
+        self.assertEqual(x + y, xy)
+        # Nested list fetch
+        xy = s.run([[[tf_xy]], tf_xy, [tf_xy]])
+        self.assertAllEqual(xy, [[[x + y]], x + y, [x + y]])
+        self.assertEqual(scalar, type(xy[0][0][0]))
+        self.assertEqual(scalar, type(xy[1]))
+        self.assertEqual(scalar, type(xy[2][0]))
 
   def testFetchOperationObject(self):
     with session.Session() as s:
@@ -228,6 +285,39 @@ class SessionTest(test_util.TensorFlowTestCase):
       self.assertAllEqual(sp_out.indices, indices)
       self.assertAllEqual(sp_out.values, values)
       self.assertAllEqual(sp_out.shape, shape)
+      # Dict fetch (single value), use as tuple
+      indices_out, values_out, shape_out = s.run({'sp': sp})['sp']
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
+      # Dict fetch (list value), use as tuple
+      (indices_out, values_out, shape_out), = s.run({'sp': [sp]})['sp']
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
+      # Dict fetch, use as SparseTensorValue
+      sp_out = s.run({'sp': sp})['sp']
+      self.assertAllEqual(sp_out.indices, indices)
+      self.assertAllEqual(sp_out.values, values)
+      self.assertAllEqual(sp_out.shape, shape)
+      # Nested list fetch use as tuple
+      sp_out = s.run([[[sp]], sp])
+      indices_out, values_out, shape_out = sp_out[0][0][0]
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
+      indices_out, values_out, shape_out = sp_out[1]
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
+      # Nested list fetch, use as SparseTensorValue
+      sp_out = s.run([[[sp]], sp])
+      self.assertAllEqual(sp_out[0][0][0].indices, indices)
+      self.assertAllEqual(sp_out[0][0][0].values, values)
+      self.assertAllEqual(sp_out[0][0][0].shape, shape)
+      self.assertAllEqual(sp_out[1].indices, indices)
+      self.assertAllEqual(sp_out[1].values, values)
+      self.assertAllEqual(sp_out[1].shape, shape)
 
   def testFeedSparseTensor(self):
     with session.Session() as s:
@@ -260,6 +350,55 @@ class SessionTest(test_util.TensorFlowTestCase):
       self.assertAllEqual(sp2_out.indices, indices)
       self.assertAllEqual(sp2_out.values, values)
       self.assertAllEqual(sp2_out.shape, shape)
+
+  def testFeedSparsePlaceholder(self):
+    with session.Session() as s:
+      indices = np.array([[3, 2, 0], [4, 5, 1]]).astype(np.int64)
+      values = np.array([1.0, 2.0]).astype(np.float32)
+      shape = np.array([7, 9, 2]).astype(np.int64)
+      sp = array_ops.sparse_placeholder(dtype=np.float32, name='placeholder1')
+      sp_indices = array_ops.identity(sp.indices)
+      sp_values = array_ops.identity(sp.values)
+      sp_shape = array_ops.identity(sp.shape)
+      sp2 = ops.SparseTensor(sp_indices, sp_values, sp_shape)
+      # Feed with tuple
+      indices_out, values_out, shape_out = s.run(
+          [sp_indices, sp_values, sp_shape], {sp: (indices, values, shape)})
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
+      # Feed with SparseTensorValue
+      indices_out, values_out, shape_out = s.run(
+          [sp_indices, sp_values, sp_shape],
+          {sp: ops.SparseTensorValue(indices, values, shape)})
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
+      # Feed with SparseTensorValue, fetch SparseTensorValue
+      sp2_out = s.run(sp2, {sp: ops.SparseTensorValue(indices, values, shape)})
+      self.assertAllEqual(sp2_out.indices, indices)
+      self.assertAllEqual(sp2_out.values, values)
+      self.assertAllEqual(sp2_out.shape, shape)
+
+  def testFeedSparePlaceholderConstantShape(self):
+    with session.Session() as s:
+      indices = np.array([[3, 2, 0], [4, 5, 1]]).astype(np.int64)
+      values = np.array([1.0, 2.0]).astype(np.float32)
+      shape = np.array([7, 9, 2]).astype(np.int64)
+      sp = array_ops.sparse_placeholder(dtype=np.float32,
+                                        shape=shape,
+                                        name='placeholder1')
+      self.assertAllEqual(sp.shape.eval(session=s), shape)
+      self.assertAllEqual(tensor_util.constant_value(sp.shape), shape)
+      sp_indices = array_ops.identity(sp.indices)
+      sp_values = array_ops.identity(sp.values)
+      sp_shape = array_ops.identity(sp.shape)
+      # Feed with tuple
+      indices_out, values_out, shape_out = s.run(
+          [sp_indices, sp_values, sp_shape], {sp: (indices, values)})
+      self.assertAllEqual(indices_out, indices)
+      self.assertAllEqual(values_out, values)
+      self.assertAllEqual(shape_out, shape)
 
   def testFetchIndexedSlices(self):
     with session.Session() as s:
@@ -583,6 +722,16 @@ class SessionTest(test_util.TensorFlowTestCase):
       y = s.run(2 * x, feed_dict={x: [1, 1]})
       assert (y == 2 * np.ones(2)).all()
 
+      # Test nested tuple keys
+      z = (((array_ops.zeros([2]),),), array_ops.zeros([2]),
+           (array_ops.zeros([2]),))
+      result = [z[0][0][0] * 2, z[1] * 2, z[2][0] * 2]
+      values = (((np.array([1, 1]),),), np.array([2, 2]), (np.array([3, 3]),))
+      result_value = s.run(result, feed_dict={z: values})
+      self.assertAllEqual(result_value[0], 2 * np.ones(2))
+      self.assertAllEqual(result_value[1], 2 * np.array([2, 2]))
+      self.assertAllEqual(result_value[2], 2 * np.array([3, 3]))
+
   def testGraphDef(self):
     with session.Session() as sess:
       self.assertProtoEquals(
@@ -657,6 +806,48 @@ class SessionTest(test_util.TensorFlowTestCase):
       e = math_ops.matmul(c, d)
       self.assertAllEqual([[24.0]], e.eval())
       sess.close()
+
+  def testInteractivePlacePrunedGraph(self):
+    sess = session.InteractiveSession()
+
+    # Build a graph that has a bad op in it (no kernel).
+    #
+    # This test currently does not link in any GPU kernels,
+    # which is why placing this is invalid.  If at some point
+    # GPU kernels are added to this test, some other different
+    # op / device combo should be chosen.
+    with ops.device('/gpu:0'):
+      a = constant_op.constant(1.0, shape=[1, 2])
+
+    b = constant_op.constant(1.0, shape=[1, 2])
+
+    # Only run the valid op, this should work.
+    b.eval()
+
+    with self.assertRaises(errors.InvalidArgumentError):
+      a.eval()
+    sess.close()
+
+  def testDefaultSessionPlacePrunedGraph(self):
+    sess = session.Session()
+
+    # Build a graph that has a bad op in it (no kernel).
+    #
+    # This test currently does not link in any GPU kernels,
+    # which is why placing this is invalid.  If at some point
+    # GPU kernels are added to this test, some other different
+    # op / device combo should be chosen.
+    with ops.device('/gpu:0'):
+      _ = constant_op.constant(1.0, shape=[1, 2])
+
+    b = constant_op.constant(1.0, shape=[1, 2])
+
+    with self.assertRaises(errors.InvalidArgumentError):
+      # Even though we don't run the bad op, we place the entire
+      # graph, which should fail with a non-interactive session.
+      sess.run(b)
+
+    sess.close()
 
   def testSharedGraph(self):
     with ops.Graph().as_default() as g, ops.device('/cpu:0'):
@@ -786,8 +977,8 @@ class SessionTest(test_util.TensorFlowTestCase):
 
   def testInvalidTargetFails(self):
     with self.assertRaisesRegexp(
-        RuntimeError,
-        'No session factory registered for the given session options.'):
+        errors.NotFoundError,
+        'No session factory registered for the given session options'):
       session.Session('INVALID_TARGET')
 
   def testFetchByNameDifferentStringTypes(self):
@@ -922,10 +1113,20 @@ class SessionTest(test_util.TensorFlowTestCase):
       self.assertEqual(steps, len(res))
       self.assertEqual(2.0, res[-1])
 
+  def testRunAndPartialRun(self):
+    with session.Session() as sess:
+      a = constant_op.constant(2.0, dtypes.float32)
+      b = a * 2
+      c = b * 3
+      r1 = sess.run([b, c])
+      h = sess.partial_run_setup([b, c], [])
+      r2 = sess.partial_run(h, [b, c])
+      self.assertEqual(r1, r2)
+
   def testFeedDictKeyException(self):
     with session.Session() as sess:
       a = constant_op.constant(1.0, dtypes.float32, name='a')
-      with self.assertRaisesRegexp(TypeError, "Cannot interpret feed_dict"):
+      with self.assertRaisesRegexp(TypeError, 'Cannot interpret feed_dict'):
         sess.run(a, feed_dict={'a': [2.0]})
 
   def testPerStepTrace(self):
@@ -990,6 +1191,72 @@ class SessionTest(test_util.TensorFlowTestCase):
           errors.InvalidArgumentError,
           'Must specify at least one target to fetch or execute.'):
         sess.run([])
+
+  def testInferShapesFalse(self):
+    with ops.Graph().as_default(), ops.device('/cpu:0'):
+      a = constant_op.constant([[1, 2]])
+      sess = session.Session()
+      self.assertFalse('_output_shapes' in sess.graph_def.node[0].attr)
+      # Avoid lint error regarding 'unused' var a.
+      self.assertTrue(a == a)
+
+  def testInferShapesTrue(self):
+    config = config_pb2.ConfigProto(
+        graph_options=config_pb2.GraphOptions(infer_shapes=True))
+    with ops.Graph().as_default(), ops.device('/cpu:0'):
+      a = constant_op.constant([[1, 2]])
+      sess = session.Session(config=config)
+      self.assertTrue('_output_shapes' in sess.graph_def.node[0].attr)
+      # Avoid lint error regarding 'unused' var a.
+      self.assertTrue(a == a)
+
+  def testBuildCostModel(self):
+    run_options = config_pb2.RunOptions()
+    config = config_pb2.ConfigProto(
+        allow_soft_placement=True,
+        graph_options=config_pb2.GraphOptions(build_cost_model=100))
+    with session.Session(config=config) as sess:
+      with ops.device('/gpu:0'):
+        a = array_ops.placeholder(dtypes.float32, shape=[])
+        b = math_ops.add(a, a)
+        c = array_ops.identity(b)
+        d = math_ops.mul(c, c)
+      for step in xrange(120):
+        run_metadata = config_pb2.RunMetadata()
+        sess.run(d, feed_dict={a: 1.0},
+                 options=run_options, run_metadata=run_metadata)
+        if step == 99:
+          self.assertTrue(run_metadata.HasField('cost_graph'))
+        else:
+          self.assertFalse(run_metadata.HasField('cost_graph'))
+
+  def testNonInteractiveSessionNesting(self):
+    sess1 = session.Session()
+    sess1_controller = sess1.as_default()
+    sess1_controller.__enter__()
+
+    sess2 = session.Session()
+    sess2_controller = sess2.as_default()
+    sess2_controller.__enter__()
+
+    with self.assertRaisesRegexp(AssertionError, 'Nesting violated'):
+      sess1_controller.__exit__(None, None, None)
+
+    ops._default_session_stack.reset()
+
+  def testInteractiveSessionNesting(self):
+    sess1 = session.InteractiveSession()
+    sess2 = session.InteractiveSession()
+    del sess1
+    del sess2
+
+  def testInvalidArgument(self):
+    with self.assertRaisesRegexp(TypeError, 'target must be a string'):
+      session.Session(37)
+    with self.assertRaisesRegexp(TypeError, 'config must be a tf.ConfigProto'):
+      session.Session(config=37)
+    with self.assertRaisesRegexp(TypeError, 'graph must be a tf.Graph'):
+      session.Session(graph=37)
 
 
 if __name__ == '__main__':
