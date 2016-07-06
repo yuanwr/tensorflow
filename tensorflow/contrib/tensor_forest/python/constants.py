@@ -1,5 +1,5 @@
-#!/usr/bin/env bash
-# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
+# pylint: disable=g-bad-file-header
+# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,17 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+"""Constants used by tensorforest.  Some of these map to values in C++ ops."""
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
-set -e
+# If tree[i][0] equals this value, then i is a leaf node.
+LEAF_NODE = -1
 
-export CUDA_SO=$(\ls /usr/lib/x86_64-linux-gnu/libcuda.* | \
-                    xargs -I{} echo '-v {}:{}')
-export DEVICES=$(\ls /dev/nvidia* | \
-                    xargs -I{} echo '--device {}:{}')
-
-if [[ "${DEVICES}" = "" ]]; then
-  echo "Failed to locate NVidia device(s). Did you want the non-GPU container?"
-  exit 1
-fi
-
-docker run -it $CUDA_SO $DEVICES "$@"
+# Data column types for indicating categorical or other non-float values.
+DATA_FLOAT = 0
+DATA_CATEGORICAL = 1
