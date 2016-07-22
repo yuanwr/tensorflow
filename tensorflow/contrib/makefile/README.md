@@ -16,15 +16,15 @@ This static library will not contain:
  - Python or other language bindings
  - GPU support
  
- You can target:
- - iOS
- - OS X (macOS)
- - Android
- - Raspberry-PI
+You can target:
+- iOS
+- OS X (macOS)
+- Android
+- Raspberry-PI
  
- You will compile tensorflow and protobuf libraries that you can link into other
- applications.  You will also compile the [benchmark](../../tools/benchmark/)
- application that will let you check your application.
+You will compile tensorflow and protobuf libraries that you can link into other
+applications.  You will also compile the [benchmark](../../tools/benchmark/)
+application that will let you check your application.
  
 ## Before you start (all platforms)
 
@@ -153,7 +153,7 @@ For more details, see the [benchmark documentation](../../tools/benchmark).
 ## iOS
 
 _Note: To use this library in an iOS application, see related instructions in
-the [iOS examples](../ios_examples/] directory._
+the [iOS examples](../ios_examples/) directory._
 
 Install XCode 7.3 or more recent. If you have not already, you will need to
 install the command-line tools using `xcode-select`:
@@ -176,20 +176,21 @@ curl -o ~/graphs/inception.zip \
 
 ### Building all at once
 
-If you just want to get the libraries compiled in a hurry, you can run:
+If you just want to get the libraries compiled in a hurry, you can run this
+from the root of your TensorFlow source folder:
 
 ```bash
-build_all_ios.sh
+tensorflow/contrib/makefile/build_all_ios.sh
 ```
 
-and wait a long time.
+This process will take around twenty minutes on a modern MacBook Pro.
 
-When this completes, you will have a library for a single architecture and the
+When it completes, you will have a library for a single architecture and the
 benchmark program. Although successfully compiling the benchmark program is a
 sign of success, the program is not a complete iOS app.
 
 To see TensorFlow running on iOS, the example Xcode project in
-[tensorflow/contrib/ios_example](../ios_example) shows how to use the static
+[tensorflow/contrib/ios_examples](../ios_examples) shows how to use the static
 library in a simple app.
 
 ### Building by hand
@@ -227,7 +228,7 @@ benchmark program. Although successfully compiling the benchmark program is a
 sign of success, the program is not a complete iOS app. 
 
 To see TensorFlow running on iOS, the example Xcode project in
-[tensorflow/contrib/ios_example](../ios_example) shows how to use the static
+[tensorflow/contrib/ios_examples](../ios_examples) shows how to use the static
 library in a simple app.
 
 #### Universal binaries

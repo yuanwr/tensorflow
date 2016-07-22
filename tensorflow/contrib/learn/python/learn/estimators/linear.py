@@ -23,10 +23,24 @@ from tensorflow.contrib import layers
 from tensorflow.contrib.framework.python.ops import variables as contrib_variables
 from tensorflow.contrib.learn.python.learn.estimators import _sklearn
 from tensorflow.contrib.learn.python.learn.estimators import dnn_linear_combined
-from tensorflow.contrib.learn.python.learn.estimators import sdca_optimizer
 from tensorflow.contrib.learn.python.learn.estimators.base import DeprecatedMixin
+from tensorflow.contrib.linear_optimizer.python import sdca_optimizer
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import logging_ops
+from tensorflow.python.platform import tf_logging as logging
+
+
+# TODO(b/29580537): Replace with @changing decorator.
+def _changing(feature_columns):
+  if feature_columns is not None:
+    return
+  logging.warn(
+      "Change warning: `feature_columns` will be required after 2016-08-01.\n"
+      "Instructions for updating:\n"
+      "Pass `tf.contrib.learn.infer_real_valued_columns_from_input(x)` or"
+      " `tf.contrib.learn.infer_real_valued_columns_from_input_fn(input_fn)`"
+      " as `feature_columns`, where `x` or `input_fn` is your argument to"
+      " `fit`, `evaluate`, or `predict`.")
 
 
 class LinearClassifier(dnn_linear_combined.DNNLinearCombinedClassifier):
@@ -61,7 +75,7 @@ class LinearClassifier(dnn_linear_combined.DNNLinearCombinedClassifier):
   # Or estimator using the SDCAOptimizer.
   estimator = LinearClassifier(
      feature_columns=[occupation, education_x_occupation],
-     optimizer=tf.contrib.learn.SDCAOptimizer(
+     optimizer=tf.contrib.linear_optimizer.SDCAOptimizer(
        example_id_column='example_id',
        symmetric_l2_regularization=2.0
      ))
@@ -84,6 +98,9 @@ class LinearClassifier(dnn_linear_combined.DNNLinearCombinedClassifier):
   * for each `column` in `feature_columns`:
     - if `column` is a `SparseColumn`, a feature with `key=column.name`
       whose `value` is a `SparseTensor`.
+    - if `column` is a `WeightedSparseColumn`, two features: the first with
+      `key` the id column name, the second with `key` the weight column name.
+      Both features' `value` must be a `SparseTensor`.
     - if `column` is a `RealValuedColumn`, a feature with `key=column.name`
       whose `value` is a `Tensor`.
     - if `feature_columns` is `None`, then `input` must contains only real
@@ -124,6 +141,7 @@ class LinearClassifier(dnn_linear_combined.DNNLinearCombinedClassifier):
     Returns:
       A `LinearClassifier` estimator.
     """
+    _changing(feature_columns)
     super(LinearClassifier, self).__init__(
         model_dir=model_dir,
         n_classes=n_classes,
@@ -135,8 +153,7 @@ class LinearClassifier(dnn_linear_combined.DNNLinearCombinedClassifier):
         config=config)
     self._feature_columns_inferred = False
 
-  # TODO(ptucker): Update this class to require caller pass `feature_columns` to
-  # ctor, so we can remove feature_column inference.
+  # TODO(b/29580537): Remove feature_columns inference.
   def _validate_linear_feature_columns(self, features):
     if self._linear_feature_columns is None:
       self._linear_feature_columns = layers.infer_real_valued_columns(features)
@@ -168,26 +185,29 @@ class LinearClassifier(dnn_linear_combined.DNNLinearCombinedClassifier):
         feature_columns=self._linear_feature_columns,
         num_outputs=self._target_column.num_label_columns,
         weight_collections=[self._linear_weight_collection],
-        name="linear")
+        scope="linear")
     with ops.control_dependencies([self._centered_bias()]):
-      loss = self._loss(logits, targets, features)
+      loss = self._target_column.loss(logits, targets, features)
     logging_ops.scalar_summary("loss", loss)
 
     train_ops = self._linear_optimizer.get_train_step(
         self._linear_feature_columns, self._target_column.weight_column_name,
-        "logistic_loss", features, targets, columns_to_variables, global_step)
+        self._loss_type(), features, targets, columns_to_variables, global_step)
 
     return train_ops, loss
 
   def _get_eval_ops(self, features, targets, metrics=None):
     self._validate_linear_feature_columns(features)
-    return super(LinearClassifier, self)._get_eval_ops(
-        features, targets, metrics)
+    return super(LinearClassifier, self)._get_eval_ops(features, targets,
+                                                       metrics)
 
   def _get_predict_ops(self, features):
     """See base class."""
     self._validate_linear_feature_columns(features)
     return super(LinearClassifier, self)._get_predict_ops(features)
+
+  def _loss_type(self):
+    return "logistic_loss"
 
   @property
   def weights_(self):
@@ -236,6 +256,9 @@ class LinearRegressor(dnn_linear_combined.DNNLinearCombinedRegressor):
   * for column in `feature_columns`:
     - if isinstance(column, `SparseColumn`):
         key=column.name, value=a `SparseTensor`
+    - if isinstance(column, `WeightedSparseColumn`):
+        {key=id column name, value=a `SparseTensor`,
+         key=weight column name, value=a `SparseTensor`}
     - if isinstance(column, `RealValuedColumn`):
         key=column.name, value=a `Tensor`
     - if `feature_columns` is `None`:
@@ -275,6 +298,7 @@ class LinearRegressor(dnn_linear_combined.DNNLinearCombinedRegressor):
     Returns:
       A `LinearRegressor` estimator.
     """
+    _changing(feature_columns)
     super(LinearRegressor, self).__init__(
         model_dir=model_dir,
         weight_column_name=weight_column_name,
@@ -286,6 +310,7 @@ class LinearRegressor(dnn_linear_combined.DNNLinearCombinedRegressor):
         config=config)
     self._feature_columns_inferred = False
 
+  # TODO(b/29580537): Remove feature_columns inference.
   def _validate_linear_feature_columns(self, features):
     if self._linear_feature_columns is None:
       self._linear_feature_columns = layers.infer_real_valued_columns(features)
@@ -308,8 +333,8 @@ class LinearRegressor(dnn_linear_combined.DNNLinearCombinedRegressor):
 
   def _get_eval_ops(self, features, targets, metrics=None):
     self._validate_linear_feature_columns(features)
-    return super(LinearRegressor, self)._get_eval_ops(
-        features, targets, metrics)
+    return super(LinearRegressor, self)._get_eval_ops(features, targets,
+                                                      metrics)
 
   def _get_predict_ops(self, features):
     """See base class."""

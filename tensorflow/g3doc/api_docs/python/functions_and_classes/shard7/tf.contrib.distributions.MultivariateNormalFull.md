@@ -129,6 +129,13 @@ Shape of a sample from a single distribution as a 1-D int32 `Tensor`.
 
 - - -
 
+#### `tf.contrib.distributions.MultivariateNormalFull.is_continuous` {#MultivariateNormalFull.is_continuous}
+
+
+
+
+- - -
+
 #### `tf.contrib.distributions.MultivariateNormalFull.is_reparameterized` {#MultivariateNormalFull.is_reparameterized}
 
 
@@ -143,27 +150,43 @@ Log CDF.
 
 - - -
 
-#### `tf.contrib.distributions.MultivariateNormalFull.log_likelihood(value, name='log_likelihood')` {#MultivariateNormalFull.log_likelihood}
+#### `tf.contrib.distributions.MultivariateNormalFull.log_pdf(value, name='log_pdf')` {#MultivariateNormalFull.log_pdf}
 
-Log likelihood of this distribution (same as log_pdf).
+Log of the probability density function.
 
 
 - - -
 
-#### `tf.contrib.distributions.MultivariateNormalFull.log_pdf(x, name='log_pdf')` {#MultivariateNormalFull.log_pdf}
+#### `tf.contrib.distributions.MultivariateNormalFull.log_pmf(value, name='log_pmf')` {#MultivariateNormalFull.log_pmf}
 
-Log pdf of observations `x` given these Multivariate Normals.
+Log of the probability mass function.
+
+
+- - -
+
+#### `tf.contrib.distributions.MultivariateNormalFull.log_prob(x, name='log_prob')` {#MultivariateNormalFull.log_prob}
+
+Log prob of observations `x` given these Multivariate Normals.
+
+`x` is a batch vector with compatible shape if `x` is a `Tensor` whose
+shape can be broadcast up to either:
+
+````
+self.batch_shape + self.event_shape
+OR
+[M1,...,Mm] + self.batch_shape + self.event_shape
+```
 
 ##### Args:
 
 
-*  <b>`x`</b>: tensor of dtype `dtype`, must be broadcastable with `mu`.
+*  <b>`x`</b>: Compatible batch vector with same `dtype` as this distribution.
 *  <b>`name`</b>: The name to give this op.
 
 ##### Returns:
 
 
-*  <b>`log_pdf`</b>: tensor of dtype `dtype`, the log-PDFs of `x`.
+*  <b>`log_prob`</b>: tensor of dtype `dtype`, the log-PDFs of `x`.
 
 
 - - -
@@ -203,20 +226,43 @@ Mode of each batch member.
 
 - - -
 
-#### `tf.contrib.distributions.MultivariateNormalFull.pdf(x, name='pdf')` {#MultivariateNormalFull.pdf}
+#### `tf.contrib.distributions.MultivariateNormalFull.pdf(value, name='pdf')` {#MultivariateNormalFull.pdf}
+
+The probability density function.
+
+
+- - -
+
+#### `tf.contrib.distributions.MultivariateNormalFull.pmf(value, name='pmf')` {#MultivariateNormalFull.pmf}
+
+The probability mass function.
+
+
+- - -
+
+#### `tf.contrib.distributions.MultivariateNormalFull.prob(x, name='prob')` {#MultivariateNormalFull.prob}
 
 The PDF of observations `x` under these Multivariate Normals.
+
+`x` is a batch vector with compatible shape if `x` is a `Tensor` whose
+shape can be broadcast up to either:
+
+````
+self.batch_shape + self.event_shape
+OR
+[M1,...,Mm] + self.batch_shape + self.event_shape
+```
 
 ##### Args:
 
 
-*  <b>`x`</b>: tensor of dtype `dtype`, must be broadcastable with `mu` and `sigma`.
+*  <b>`x`</b>: Compatible batch vector with same `dtype` as this distribution.
 *  <b>`name`</b>: The name to give this op.
 
 ##### Returns:
 
 
-*  <b>`pdf`</b>: tensor of dtype `dtype`, the pdf values of `x`.
+*  <b>`prob`</b>: tensor of dtype `dtype`, the prob values of `x`.
 
 
 - - -

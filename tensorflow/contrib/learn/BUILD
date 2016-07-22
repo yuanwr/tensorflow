@@ -309,6 +309,18 @@ py_test(
 )
 
 py_test(
+    name = "monitored_session_test",
+    size = "small",
+    srcs = ["python/learn/tests/monitored_session_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":learn",
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/python:framework_test_lib",
+    ],
+)
+
+py_test(
     name = "monitors_test",
     size = "small",
     srcs = ["python/learn/tests/monitors_test.py"],
@@ -419,6 +431,30 @@ py_test(
     name = "linear_test",
     size = "medium",
     srcs = ["python/learn/estimators/linear_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":learn",
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/python:framework_test_lib",
+    ],
+)
+
+py_test(
+    name = "composable_model_test",
+    size = "medium",
+    srcs = ["python/learn/estimators/composable_model_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":learn",
+        "//tensorflow:tensorflow_py",
+        "//tensorflow/python:framework_test_lib",
+    ],
+)
+
+py_test(
+    name = "svm_test",
+    size = "medium",
+    srcs = ["python/learn/estimators/svm_test.py"],
     srcs_version = "PY2AND3",
     deps = [
         ":learn",
@@ -589,7 +625,7 @@ py_test(
 py_test(
     name = "graph_io_test",
     size = "small",
-    srcs = ["python/learn/io/graph_io_test.py"],
+    srcs = ["python/learn/learn_io/graph_io_test.py"],
     srcs_version = "PY2AND3",
     tags = ["manual"],  # http://b/29229547
     deps = [
@@ -605,6 +641,10 @@ py_test(
     size = "small",
     srcs = ["python/learn/utils/export_test.py"],
     srcs_version = "PY2AND3",
+    tags = [
+        "manual",
+        "notap",  # http://b/29829657
+    ],
     deps = [
         ":learn",
         "//tensorflow:tensorflow_py",
@@ -623,6 +663,56 @@ py_test(
         "//tensorflow:tensorflow_py",
         "//tensorflow/python:framework",
         "//tensorflow/python:framework_test_lib",
+    ],
+)
+
+py_test(
+    name = "wrapped_session_test",
+    size = "small",
+    srcs = ["python/learn/tests/wrapped_session_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_test(
+    name = "coordinated_session_test",
+    size = "small",
+    srcs = ["python/learn/tests/coordinated_session_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_test(
+    name = "recoverable_session_test",
+    size = "small",
+    srcs = ["python/learn/tests/recoverable_session_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_test(
+    name = "supervised_session_test",
+    size = "small",
+    srcs = ["python/learn/tests/supervised_session_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow:tensorflow_py",
+    ],
+)
+
+py_test(
+    name = "summary_writer_cache_test",
+    size = "small",
+    srcs = ["python/learn/tests/summary_writer_cache_test.py"],
+    srcs_version = "PY2AND3",
+    deps = [
+        "//tensorflow:tensorflow_py",
     ],
 )
 

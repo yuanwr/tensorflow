@@ -209,6 +209,52 @@ def train(graph,
       evaluates to `NaN`.
     ValueError: If both `steps` and `max_steps` are not `None`.
   """
+  while True:
+    try:
+      return _train_internal(graph,
+                             output_dir,
+                             train_op,
+                             loss_op,
+                             global_step_tensor,
+                             init_op,
+                             init_feed_dict,
+                             init_fn,
+                             log_every_steps,
+                             supervisor_is_chief,
+                             supervisor_master,
+                             supervisor_save_model_secs,
+                             keep_checkpoint_max,
+                             supervisor_save_summaries_steps,
+                             feed_fn,
+                             steps,
+                             fail_on_nan_loss,
+                             monitors,
+                             max_steps)
+    except errors.AbortedError:
+      # Happens when PS restarts, keep training.
+      logging.warning('Training got Aborted error. Keep training.')
+
+
+def _train_internal(graph,
+                    output_dir,
+                    train_op,
+                    loss_op,
+                    global_step_tensor,
+                    init_op,
+                    init_feed_dict,
+                    init_fn,
+                    log_every_steps,
+                    supervisor_is_chief,
+                    supervisor_master,
+                    supervisor_save_model_secs,
+                    keep_checkpoint_max,
+                    supervisor_save_summaries_steps,
+                    feed_fn,
+                    steps,
+                    fail_on_nan_loss,
+                    monitors,
+                    max_steps):
+  """See train."""
   if (steps is not None) and (max_steps is not None):
     raise ValueError('Can not provide both steps and max_steps.')
   if not output_dir:
@@ -234,16 +280,19 @@ def train(graph,
     summary_writer = (get_summary_writer(output_dir)
                       if supervisor_is_chief else None)
 
-    # TODO(ipolosukhin): Replace all functionality of Supervisor with Monitors.
-    if not supervisor_is_chief:
-      # monitors should run only on the chief.
-      monitors = []
-    elif not monitors:
+    # Add default chief monitors if none were provided.
+    if not monitors:
       monitors = monitors_lib.get_default_monitors(
           loss_op=loss_op,
           summary_op=logging_ops.get_summary_op(),
           save_summary_steps=supervisor_save_summaries_steps,
-          summary_writer=summary_writer)
+          summary_writer=summary_writer) if supervisor_is_chief else []
+
+    # TODO(ipolosukhin): Replace all functionality of Supervisor
+    # with Chief-Exclusive Monitors.
+    if not supervisor_is_chief:
+      # Prune list of monitor to the ones runnable on all workers.
+      monitors = [monitor for monitor in monitors if monitor.run_on_all_workers]
 
     if max_steps is None:
       max_steps = (start_step + steps) if steps else None
@@ -284,13 +333,8 @@ def train(graph,
         start_time = time.time()
         feed_dict = feed_fn() if feed_fn is not None else None
 
-        try:
-          outputs, should_stop = _run_with_monitors(
-              session, last_step + 1, [train_op, loss_op], feed_dict, monitors)
-        except errors.AbortedError as e:
-          # Happens when PS restarts, keep training.
-          logging.warning('Training got Aborted error. Keep training.')
-          continue
+        outputs, should_stop = _run_with_monitors(
+            session, last_step + 1, [train_op, loss_op], feed_dict, monitors)
 
         loss_value = outputs[loss_op.name]
         if np.isnan(loss_value):
@@ -321,6 +365,8 @@ def train(graph,
     except errors.OutOfRangeError as e:
       logging.warn('Got exception during tf.learn training loop possibly '
                    'due to exhausted input queue %s.', e)
+    except StopIteration:
+      logging.info('Exhausted input iterarator.')
     except BaseException as e:  # pylint: disable=broad-except
       # Hold on to any other exceptions while we try recording a final
       # checkpoint and summary.
@@ -367,20 +413,14 @@ def train(graph,
 
 def _get_first_op_from_collection(collection_name):
   elements = ops.get_collection(collection_name)
-  if elements is not None:
-    if elements:
-      return elements[0]
+  if elements:
+    return elements[0]
   return None
 
 
 def _get_saver():
   """Lazy init and return saver."""
   saver = _get_first_op_from_collection(ops.GraphKeys.SAVERS)
-  if saver is not None:
-    if saver:
-      saver = saver[0]
-    else:
-      saver = None
   if saver is None and variables.all_variables():
     saver = tf_saver.Saver()
     ops.add_to_collection(ops.GraphKeys.SAVERS, saver)

@@ -20,10 +20,10 @@ from __future__ import print_function
 
 import math
 
-from tensorflow.contrib.distributions.python.ops import distribution  # pylint: disable=line-too-long
-from tensorflow.contrib.distributions.python.ops import operator_pd_cholesky  # pylint: disable=line-too-long
-from tensorflow.contrib.distributions.python.ops import operator_pd_full  # pylint: disable=line-too-long
-from tensorflow.contrib.framework.python.framework import tensor_util as contrib_tensor_util  # pylint: disable=line-too-long
+from tensorflow.contrib.distributions.python.ops import distribution
+from tensorflow.contrib.distributions.python.ops import operator_pd_cholesky
+from tensorflow.contrib.distributions.python.ops import operator_pd_full
+from tensorflow.contrib.framework.python.framework import tensor_util as contrib_tensor_util
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import tensor_shape
@@ -41,7 +41,7 @@ __all__ = [
 ]
 
 
-class MultivariateNormalOperatorPD(distribution.ContinuousDistribution):
+class MultivariateNormalOperatorPD(distribution.Distribution):
   """The multivariate normal distribution on `R^k`.
 
   This distribution is defined by a 1-D mean `mu` and an instance of
@@ -236,47 +236,81 @@ class MultivariateNormalOperatorPD(distribution.ContinuousDistribution):
       with ops.op_scope(self._cov.inputs, name):
         return math_ops.exp(self._cov.log_det())
 
-  def log_pdf(self, x, name="log_pdf"):
-    """Log pdf of observations `x` given these Multivariate Normals.
+  def log_prob(self, x, name="log_prob"):
+    """Log prob of observations `x` given these Multivariate Normals.
+
+    `x` is a batch vector with compatible shape if `x` is a `Tensor` whose
+    shape can be broadcast up to either:
+
+    ````
+    self.batch_shape + self.event_shape
+    OR
+    [M1,...,Mm] + self.batch_shape + self.event_shape
+    ```
 
     Args:
-      x: tensor of dtype `dtype`, must be broadcastable with `mu`.
+      x: Compatible batch vector with same `dtype` as this distribution.
       name: The name to give this op.
 
     Returns:
-      log_pdf: tensor of dtype `dtype`, the log-PDFs of `x`.
+      log_prob: tensor of dtype `dtype`, the log-PDFs of `x`.
     """
+    # Q:  Why are shape requirements as stated above?
+    # A:  The compatible shapes are precisely the ones that will broadcast to
+    #     a shape compatible with self._cov.
+    # See Operator base class for notes about shapes compatible with self._cov.
     with ops.name_scope(self.name):
       with ops.op_scope([self._mu, x] + self._cov.inputs, name):
         x = ops.convert_to_tensor(x)
         contrib_tensor_util.assert_same_float_dtype((self._mu, x))
 
+        # _check_mu asserts that self.mu has same batch shape as self.cov.
+        # so batch shape of self.mu = that of self._cov and self, and the
+        # batch shape of x_centered is a broadcast version of these.  If this
+        # broadcast results in a shape like
+        # [M1,...,Mm] + self.batch_shape + self.event_shape
+        # OR
+        # self.batch_shape + self.event_shape
+        # then subsequent operator calls are guaranteed to work.
         x_centered = x - self.mu
-        x_whitened_norm = self._cov.inv_quadratic_form(x_centered)
+
+        # Compute the term x^{-1} sigma^{-1} x which appears in the exponent of
+        # the pdf.
+        x_whitened_norm = self._cov.inv_quadratic_form_on_vectors(x_centered)
+
         log_sigma_det = self.log_sigma_det()
 
         log_two_pi = constant_op.constant(
             math.log(2 * math.pi), dtype=self.dtype)
         k = math_ops.cast(self._cov.vector_space_dimension(), self.dtype)
-        log_pdf_value = -(log_sigma_det + k * log_two_pi + x_whitened_norm) / 2
+        log_prob_value = -(log_sigma_det + k * log_two_pi + x_whitened_norm) / 2
 
         output_static_shape = x_centered.get_shape()[:-1]
-        log_pdf_value.set_shape(output_static_shape)
-        return log_pdf_value
+        log_prob_value.set_shape(output_static_shape)
+        return log_prob_value
 
-  def pdf(self, x, name="pdf"):
+  def prob(self, x, name="prob"):
     """The PDF of observations `x` under these Multivariate Normals.
 
+    `x` is a batch vector with compatible shape if `x` is a `Tensor` whose
+    shape can be broadcast up to either:
+
+    ````
+    self.batch_shape + self.event_shape
+    OR
+    [M1,...,Mm] + self.batch_shape + self.event_shape
+    ```
+
     Args:
-      x: tensor of dtype `dtype`, must be broadcastable with `mu` and `sigma`.
+      x: Compatible batch vector with same `dtype` as this distribution.
       name: The name to give this op.
 
     Returns:
-      pdf: tensor of dtype `dtype`, the pdf values of `x`.
+      prob: tensor of dtype `dtype`, the prob values of `x`.
     """
     with ops.name_scope(self.name):
       with ops.op_scope([self._mu, x] + self._cov.inputs, name):
-        return math_ops.exp(self.log_pdf(x))
+        return math_ops.exp(self.log_prob(x))
 
   def entropy(self, name="entropy"):
     """The entropies of these Multivariate Normals.
@@ -352,6 +386,10 @@ class MultivariateNormalOperatorPD(distribution.ContinuousDistribution):
   @property
   def name(self):
     return self._name
+
+  @property
+  def is_continuous(self):
+    return True
 
 
 class MultivariateNormalCholesky(MultivariateNormalOperatorPD):

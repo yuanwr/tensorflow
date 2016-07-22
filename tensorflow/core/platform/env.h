@@ -150,6 +150,18 @@ class Env {
   /// Deletes the specified directory.
   Status DeleteDir(const string& dirname);
 
+  /// Obtains statistics for the given path.
+  Status Stat(const string& fname, FileStatistics* stat);
+
+  /// \brief Returns whether the given path is a directory or not.
+  /// Typical return codes (not guaranteed exhaustive):
+  ///  * OK - The path exists and is a directory.
+  ///  * FAILED_PRECONDITION - The path exists and is not a directory.
+  ///  * NOT_FOUND - The path entry does not exist.
+  ///  * PERMISSION_DENIED - Insufficient permissions.
+  ///  * UNIMPLEMENTED - The file factory doesn't support directories.
+  Status IsDirectory(const string& fname);
+
   /// Stores the size of `fname` in `*file_size`.
   Status GetFileSize(const string& fname, uint64* file_size);
 
@@ -170,7 +182,7 @@ class Env {
   virtual uint64 NowSeconds() { return NowMicros() / 1000000L; }
 
   /// Sleeps/delays the thread for the prescribed number of micro-seconds.
-  virtual void SleepForMicroseconds(int micros) = 0;
+  virtual void SleepForMicroseconds(int64 micros) = 0;
 
   /// \brief Returns a new thread that is running fn() and is identified
   /// (for debugging/performance-analysis) by "name".
@@ -190,7 +202,8 @@ class Env {
   // of microseconds.
   //
   // NOTE(mrry): This closure must not block.
-  virtual void SchedClosureAfter(int micros, std::function<void()> closure) = 0;
+  virtual void SchedClosureAfter(int64 micros,
+                                 std::function<void()> closure) = 0;
 
   // \brief Load a dynamic library.
   //
@@ -249,7 +262,7 @@ class EnvWrapper : public Env {
   }
 
   uint64 NowMicros() override { return target_->NowMicros(); }
-  void SleepForMicroseconds(int micros) override {
+  void SleepForMicroseconds(int64 micros) override {
     target_->SleepForMicroseconds(micros);
   }
   Thread* StartThread(const ThreadOptions& thread_options, const string& name,
@@ -259,7 +272,7 @@ class EnvWrapper : public Env {
   void SchedClosure(std::function<void()> closure) override {
     target_->SchedClosure(closure);
   }
-  void SchedClosureAfter(int micros, std::function<void()> closure) override {
+  void SchedClosureAfter(int64 micros, std::function<void()> closure) override {
     target_->SchedClosureAfter(micros, closure);
   }
   Status LoadLibrary(const char* library_filename, void** handle) override {

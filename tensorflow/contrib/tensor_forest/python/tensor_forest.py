@@ -1,4 +1,3 @@
-# pylint: disable=g-bad-file-header
 # Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -384,7 +383,7 @@ class RandomForestGraphs(object):
                   epoch=([0] if epoch is None else epoch),
                   **tree_kwargs))
 
-    return control_flow_ops.group(*tree_graphs)
+    return control_flow_ops.group(*tree_graphs, name='train')
 
   def inference_graph(self, input_data, data_spec=None):
     """Constructs a TF graph for evaluating a random forest.
@@ -409,7 +408,9 @@ class RandomForestGraphs(object):
                                                            data_spec))
     with ops.device(self.device_assigner.get_device(0)):
       all_predict = array_ops.pack(probabilities)
-      return math_ops.reduce_sum(all_predict, 0) / self.params.num_trees
+      return math_ops.div(
+          math_ops.reduce_sum(all_predict, 0), self.params.num_trees,
+          name='probabilities')
 
   def average_size(self):
     """Constructs a TF graph for evaluating the average size of a forest.
@@ -423,7 +424,8 @@ class RandomForestGraphs(object):
         sizes.append(self.trees[i].size())
     return math_ops.reduce_mean(array_ops.pack(sizes))
 
-  def training_loss(self):
+  # pylint: disable=unused-argument
+  def training_loss(self, features, labels):
     return math_ops.neg(self.average_size())
 
   # pylint: disable=unused-argument

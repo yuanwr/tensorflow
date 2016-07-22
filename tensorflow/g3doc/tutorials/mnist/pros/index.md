@@ -36,7 +36,7 @@ will use below.
 
 ### Start TensorFlow InteractiveSession
 
-Tensorflow relies on a highly efficient C++ backend to do its computation. The
+TensorFlow relies on a highly efficient C++ backend to do its computation. The
 connection to this backend is called a session.  The common usage for TensorFlow
 programs is to first create a graph and then launch it in a session.
 
@@ -190,11 +190,11 @@ accomplished by repeatedly running `train_step`.
 
 ```python
 for i in range(1000):
-  batch = mnist.train.next_batch(50)
+  batch = mnist.train.next_batch(100)
   train_step.run(feed_dict={x: batch[0], y_: batch[1]})
 ```
 
-Each training iteration we load 50 training examples. We then run the
+Each training iteration we load 100 training examples. We then run the
 `train_step` operation, using `feed_dict` to replace the `placeholder` tensors
 `x` and `y_` with the training examples.
 Note that you can replace any tensor in your computation graph using `feed_dict`

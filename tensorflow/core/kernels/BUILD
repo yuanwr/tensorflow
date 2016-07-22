@@ -47,14 +47,22 @@ tf_kernel_library(
     name = "strided_slice_op",
     srcs = [
         "strided_slice_op.cc",
+        "strided_slice_op_inst_1.cc",
+        "strided_slice_op_inst_2.cc",
+        "strided_slice_op_inst_3.cc",
+        "strided_slice_op_inst_4.cc",
+        "strided_slice_op_inst_5.cc",
+        "strided_slice_op_inst_6.cc",
     ],
     hdrs = [
         "slice_op.h",
         "strided_slice_op.h",
+        "strided_slice_op_impl.h",
     ],
     gpu_srcs = [
         "slice_op.h",
         "strided_slice_op.h",
+        "strided_slice_op_impl.h",
         "strided_slice_op_gpu.cu.cc",
         "slice_op_gpu.cu.cc",
     ],
@@ -365,9 +373,11 @@ tf_kernel_libraries(
         "bitcast_op",
         "concat_op",
         "constant_op",
+        "debug_ops",
         "diag_op",
         "batch_matrix_band_part_op",
         "batch_matrix_diag_op",
+        "batch_matrix_set_diag_op",
         "edit_distance_op",
         "gather_nd_op",
         "gather_op",
@@ -379,7 +389,6 @@ tf_kernel_libraries(
         "pack_op",
         "pad_op",
         "quantize_and_dequantize_op",
-        "random_shuffle_op",
         "reshape_op",
         "reverse_op",
         "reverse_sequence_op",
@@ -409,6 +418,7 @@ tf_kernel_libraries(
         "//tensorflow/core:array_ops_op_lib",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
+        "//tensorflow/core:gpu_runtime",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:proto_text",
@@ -507,6 +517,23 @@ tf_cc_test(
     size = "small",
     deps = [
         ":identity_op",
+        ":ops_testutil",
+        ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_cc_test(
+    name = "debug_ops_test",
+    size = "small",
+    deps = [
+        ":debug_ops",
         ":ops_testutil",
         ":ops_util",
         "//tensorflow/core:core_cpu",
@@ -815,10 +842,12 @@ tf_kernel_libraries(
         "crop_and_resize_op",
         "decode_jpeg_op",
         "decode_png_op",
+        "decode_gif_op",
         "draw_bounding_box_op",
         "encode_jpeg_op",
         "attention_ops",
         "encode_png_op",
+        "non_max_suppression_op",
         "random_crop_op",
         "resize_area_op",
         "resize_bicubic_op",
@@ -886,6 +915,7 @@ tf_cc_tests(
         "adjust_contrast_op_test",
         "colorspace_op_test",
         "crop_and_resize_op_test",
+        "non_max_suppression_op_test",
         "resize_bicubic_op_test",
         "resize_bilinear_op_test",
         "resize_nearest_neighbor_op_test",
@@ -1061,6 +1091,7 @@ tf_kernel_libraries(
         "matmul_op",
         "reduction_ops",
         "segment_reduction_ops",
+        "scan_ops",
         "sequence_ops",
         "sparse_matmul_op",
     ],
@@ -1333,7 +1364,7 @@ tf_kernel_libraries(
     ],
 )
 
-tf_cc_test(
+tf_cuda_cc_test(
     name = "lrn_op_test",
     deps = [
         ":nn",
@@ -1516,10 +1547,14 @@ tf_kernel_libraries(
     ],
 )
 
-tf_kernel_library(
+tf_kernel_libraries(
     name = "random_ops",
-    prefix = "random_op",
+    prefixes = [
+        "random_op",
+        "random_shuffle_op",
+    ],
     deps = [
+        "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
@@ -1532,6 +1567,7 @@ tf_cuda_cc_test(
     size = "small",
     deps = [
         ":random_ops",
+        "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:test",
@@ -1562,6 +1598,7 @@ tf_kernel_libraries(
         "sparse_concat_op",
         "sparse_reduce_sum_op",
         "sparse_dense_binary_op_shared",
+        "sparse_sparse_binary_op_shared",
         "sparse_reorder_op",
         "sparse_reshape_op",
         "sparse_softmax",
@@ -1651,6 +1688,7 @@ tf_kernel_libraries(
     deps = [
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
         "//tensorflow/core:string_ops_op_lib",
     ],
 )
@@ -1698,6 +1736,32 @@ tf_cuda_cc_test(
     deps = [
         ":multinomial_op",
         ":ops_util",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core:testlib",
+    ],
+)
+
+tf_kernel_library(
+    name = "parameterized_truncated_normal_op",
+    prefix = "parameterized_truncated_normal_op",
+    deps = [
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:random_ops_op_lib",
+    ],
+)
+
+tf_cuda_cc_test(
+    name = "parameterized_truncated_normal_op_test",
+    size = "small",
+    deps = [
+        ":ops_util",
+        ":parameterized_truncated_normal_op",
         "//tensorflow/core:core_cpu",
         "//tensorflow/core:framework",
         "//tensorflow/core:test",
@@ -1790,6 +1854,13 @@ filegroup(
         "split_op.cc",
         "strided_slice_op.cc",
         "strided_slice_op.h",
+        "strided_slice_op_impl.h",
+        "strided_slice_op_inst_1.cc",
+        "strided_slice_op_inst_2.cc",
+        "strided_slice_op_inst_3.cc",
+        "strided_slice_op_inst_4.cc",
+        "strided_slice_op_inst_5.cc",
+        "strided_slice_op_inst_6.cc",
         "unpack_op.cc",
         "variable_ops.cc",
         "variable_ops.h",
@@ -1954,6 +2025,7 @@ filegroup(
             "decode_png_op.*",
             "encode_jpeg_op.*",
             "decode_jpeg_op.*",
+            "decode_gif_op.*",
             "identity_reader_op.*",
             "reader_base.*",
             "fixed_length_record_reader_op.*",
