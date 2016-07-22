@@ -1,4 +1,4 @@
-# Copyright 2016 Google Inc. All Rights Reserved.
+# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,19 +32,40 @@ class Exponential(gamma.Gamma):
 
   The PDF of this distribution is:
 
-  ```pdf(x) = (lam * e^(-lam * x)), x > 0```
+  ```prob(x) = (lam * e^(-lam * x)), x > 0```
 
   Note that the Exponential distribution is a special case of the Gamma
   distribution, with Exponential(lam) = Gamma(1, lam).
   """
 
-  def __init__(self, lam, name="Exponential"):
-    with ops.op_scope([lam], name, "init"):
+  def __init__(
+      self, lam, strict=True, strict_statistics=True, name="Exponential"):
+    """Construct Exponential distribution with parameter `lam`.
+
+    Args:
+      lam: `float` or `double` tensor, the rate of the distribution(s).
+        `lam` must contain only positive values.
+      strict: Whether to assert that `lam > 0`, and that `x > 0` in the
+        methods `prob(x)` and `log_prob(x)`.  If `strict` is False
+        and the inputs are invalid, correct behavior is not guaranteed.
+      strict_statistics:  Boolean, default True.  If True, raise an exception if
+        a statistic (e.g. mean/mode/etc...) is undefined for any batch member.
+        If False, batch members with valid parameters leading to undefined
+        statistics will return NaN for this statistic.
+      name: The name to prepend to all ops created by this distribution.
+    """
+    # Even though all statistics of are defined for valid inputs, this is not
+    # true in the parent class "Gamma."  Therefore, passing
+    # strict_statistics=True
+    # through to the parent class results in unnecessary asserts.
+    with ops.op_scope([lam], name):
       lam = ops.convert_to_tensor(lam)
       self._lam = lam
       super(Exponential, self).__init__(
           alpha=math_ops.cast(1.0, dtype=lam.dtype),
-          beta=lam)
+          beta=lam,
+          strict_statistics=strict_statistics,
+          strict=strict)
 
   @property
   def lam(self):
@@ -70,6 +91,7 @@ class Exponential(gamma.Gamma):
     """
     broadcast_shape = self._lam.get_shape()
     with ops.op_scope([self.lam, n], name, "ExponentialSample"):
+      n = ops.convert_to_tensor(n, name="n")
       shape = array_ops.concat(
           0, [array_ops.pack([n]), array_ops.shape(self._lam)])
       sampled = random_ops.random_uniform(

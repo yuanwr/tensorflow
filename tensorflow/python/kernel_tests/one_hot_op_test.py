@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -116,9 +116,13 @@ class OneHotTest(tf.test.TestCase):
     self._testBasic(np.int64)
     self._testDefaultBasic(np.int64)
 
-  def testComplexBasic(self):
+  def testComplex64Basic(self):
     self._testBasic(np.complex64)
     self._testDefaultBasic(np.complex64)
+
+  def testComplex128Basic(self):
+    self._testBasic(np.complex128)
+    self._testDefaultBasic(np.complex128)
 
   def _testBatch(self, dtype):
     indices = np.asarray([[0, 2, -1, 1],

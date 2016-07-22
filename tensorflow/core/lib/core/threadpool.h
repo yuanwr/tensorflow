@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -51,12 +51,15 @@ class ThreadPool {
   // having roughly "cost_per_unit" cost, in cycles. Each unit of work is
   // indexed 0, 1, ..., total - 1. Each shard contains 1 or more units of work
   // and the total cost of each shard is roughly the same.
-  // Max_parallelism optionally caps the number of threads used.
-  //
-  // REQUIRES: max_parallelism > 0.
   void ParallelFor(int64 total, int64 cost_per_unit,
-                   std::function<void(int64, int64)> fn,
-                   int32 max_parallelism = kint32max);
+                   std::function<void(int64, int64)> fn);
+
+  // Returns the number of threads in the pool.
+  int NumThreads() const;
+
+  // Returns current thread id between 0 and NumThreads() - 1, if called from a
+  // thread in the pool. Returns -1 otherwise.
+  int CurrentThreadId() const;
 
   struct Impl;
 

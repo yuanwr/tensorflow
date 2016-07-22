@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -95,6 +95,7 @@ class MatMulTest(tf.test.TestCase):
     x = np.arange(1., 5.).reshape([4, 1]).astype(np.float64)
     y = np.arange(1., 3.).reshape([1, 2]).astype(np.float64)
     self._testCpuMatmul(x, y)
+    self._testGpuMatmul(x, y)
 
   def testHalfBasic(self):
     x = np.arange(1., 5.).reshape([4, 1]).astype(np.float16)
@@ -114,11 +115,13 @@ class MatMulTest(tf.test.TestCase):
     x = np.arange(1., 5.).reshape([4, 1]).astype(np.complex64)
     y = np.arange(1., 3.).reshape([1, 2]).astype(np.complex64)
     self._testCpuMatmul(x, y)
+    self._testGpuMatmul(x, y)
 
   def testComplex128Basic(self):
     x = np.arange(1., 5.).reshape([4, 1]).astype(np.complex128)
     y = np.arange(1., 3.).reshape([1, 2]).astype(np.complex128)
     self._testCpuMatmul(x, y)
+    self._testGpuMatmul(x, y)
 
   # Tests testing random sized matrices.
   def testFloatRandom(self):
@@ -135,6 +138,7 @@ class MatMulTest(tf.test.TestCase):
       x = self._randMatrix(n, k, np.float64)
       y = self._randMatrix(k, m, np.float64)
       self._testCpuMatmul(x, y)
+      self._testGpuMatmul(x, y)
 
   def testHalfRandom(self):
     for _ in range(10):
@@ -156,17 +160,19 @@ class MatMulTest(tf.test.TestCase):
 
   def testComplex64Random(self):
     for _ in range(10):
-      n, k, m = np.random.randint(1, 100, size=3)
+      n, k, m = np.random.randint(1, 10, size=3)  # Smaller range than float
       x = self._randMatrix(n, k, np.complex64)
       y = self._randMatrix(k, m, np.complex64)
       self._testCpuMatmul(x, y)
+      self._testGpuMatmul(x, y)
 
   def testComplex128Random(self):
     for _ in range(10):
-      n, k, m = np.random.randint(1, 100, size=3)
+      n, k, m = np.random.randint(1, 10, size=3)  # Smaller range than float
       x = self._randMatrix(n, k, np.complex128)
       y = self._randMatrix(k, m, np.complex128)
       self._testCpuMatmul(x, y)
+      self._testGpuMatmul(x, y)
 
   # Test the cases that transpose the matrices before multiplying.
   # NOTE(keveman): The cases where only one of the inputs is
@@ -185,6 +191,7 @@ class MatMulTest(tf.test.TestCase):
       x = self._randMatrix(k, n, np.float64)
       y = self._randMatrix(m, k, np.float64)
       self._testCpuMatmul(x, y, True, True)
+      self._testGpuMatmul(x, y, True, True)
 
   def testHalfRandomTransposeBoth(self):
     for _ in range(10):

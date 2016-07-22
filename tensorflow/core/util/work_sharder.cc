@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,8 +32,11 @@ void Shard(int max_parallelism, thread::ThreadPool* workers, int64 total,
     return;
   }
 #ifdef EIGEN_USE_NONBLOCKING_THREAD_POOL
-  workers->ParallelFor(total, cost_per_unit, work, max_parallelism);
-#else
+  if (max_parallelism >= workers->NumThreads()) {
+    workers->ParallelFor(total, cost_per_unit, work);
+    return;
+  }
+#endif
   cost_per_unit = std::max(1LL, cost_per_unit);
   // We shard [0, total) into "num_shards" shards.
   //   1 <= num_shards <= num worker threads
@@ -71,7 +74,6 @@ void Shard(int max_parallelism, thread::ThreadPool* workers, int64 total,
   // Inline execute the 1st shard.
   work(0, std::min(block_size, total));
   counter.Wait();
-#endif
 }
 
 }  // end namespace tensorflow

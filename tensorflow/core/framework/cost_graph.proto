@@ -1,12 +1,10 @@
 syntax = "proto3";
 
 package tensorflow;
-// option cc_enable_arenas = true;
+option cc_enable_arenas = true;
 option java_outer_classname = "CostGraphProtos";
 option java_multiple_files = true;
 option java_package = "org.tensorflow.framework";
-
-import "tensorflow/core/framework/tensor_description.proto";
 
 message CostGraphDef {
   message Node {
@@ -44,6 +42,9 @@ message CostGraphDef {
     // If true, the output is permanent: it can't be discarded, because this
     // node is part of the "final output". Nodes may depend on final nodes.
     bool is_final = 7;
+
+    // Ids of the control inputs for this node.
+    repeated int32 control_input = 8;
   }
   repeated Node node = 1;
 }

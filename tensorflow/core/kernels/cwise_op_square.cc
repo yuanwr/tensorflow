@@ -1,4 +1,4 @@
-/* Copyright 2015 Google Inc. All Rights Reserved.
+/* Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@ limitations under the License.
 
 namespace tensorflow {
 REGISTER7(UnaryOp, CPU, "Square", functor::square, float, Eigen::half, double,
-          int32, complex64, complex128, int64);
+          int32, int64, complex64, complex128);
 #if GOOGLE_CUDA
 REGISTER4(UnaryOp, GPU, "Square", functor::square, float, Eigen::half, double,
           int64);

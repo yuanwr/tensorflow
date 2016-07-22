@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,18 +13,40 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Module for constructing RNN Cells."""
+"""Module for constructing RNN Cells.
+
+## Base interface for all RNN Cells
+
+@@RNNCell
+
+## RNN Cells for use with TensorFlow's core RNN methods
+
+@@BasicRNNCell
+@@BasicLSTMCell
+@@GRUCell
+@@LSTMCell
+
+## Classes storing split `RNNCell` state
+
+@@LSTMStateTuple
+
+## RNN Cell wrappers (RNNCells that wrap other RNNCells)
+
+@@MultiRNNCell
+@@DropoutWrapper
+@@EmbeddingWrapper
+@@InputProjectionWrapper
+@@OutputProjectionWrapper
+"""
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import collections
 import math
 
-# pylint: disable=redefined-builtin,unused-import
-from six.moves import xrange
-# pylint: enable=redefined-builtin,unused-import
-
 from tensorflow.python.framework import ops
+from tensorflow.python.framework import tensor_shape
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import clip_ops
 from tensorflow.python.ops import embedding_ops
@@ -37,6 +59,29 @@ from tensorflow.python.ops.math_ops import sigmoid
 from tensorflow.python.ops.math_ops import tanh
 
 from tensorflow.python.platform import tf_logging as logging
+from tensorflow.python.util import nest
+
+
+def _state_size_with_prefix(state_size, prefix=None):
+  """Helper function that enables int or TensorShape shape specification.
+
+  This function takes a size specification, which can be an integer or a
+  TensorShape, and converts it into a list of integers. One may specify any
+  additional dimensions that precede the final state size specification.
+
+  Args:
+    state_size: TensorShape or int that specifies the size of a tensor.
+    prefix: optional additional list of dimensions to prepend.
+
+  Returns:
+    result_state_size: list of dimensions the resulting tensor size.
+  """
+  result_state_size = tensor_shape.as_shape(state_size).as_list()
+  if prefix is not None:
+    if not isinstance(prefix, list):
+      raise TypeError("prefix of _state_size_with_prefix should be a list.")
+    result_state_size = prefix + result_state_size
+  return result_state_size
 
 
 class RNNCell(object):
@@ -79,12 +124,16 @@ class RNNCell(object):
 
   @property
   def state_size(self):
-    """Integer or tuple of integers: size(s) of state(s) used by this cell."""
+    """size(s) of state(s) used by this cell.
+
+    It can be represented by an Integer, a TensorShape or a tuple of Integers
+    or TensorShapes.
+    """
     raise NotImplementedError("Abstract method")
 
   @property
   def output_size(self):
-    """Integer: size of outputs produced by this cell."""
+    """Integer or TensorShape: size of outputs produced by this cell."""
     raise NotImplementedError("Abstract method")
 
   def zero_state(self, batch_size, dtype):
@@ -95,24 +144,29 @@ class RNNCell(object):
       dtype: the data type to use for the state.
 
     Returns:
-      If `state_size` is an int, then the return value is a `2-D` tensor of
-      shape `[batch_size x state_size]` filled with zeros.
+      If `state_size` is an int or TensorShape, then the return value is a
+      `N-D` tensor of shape `[batch_size x state_size]` filled with zeros.
 
-      If `state_size` is a list or tuple of ints, then the return value is
-      a tuple of `2-D` tensors with shape
-      `[batch_size x s] for s in state_size`.
+      If `state_size` is a nested list or tuple, then the return value is
+      a nested list or tuple (of the same structure) of `2-D` tensors with
+    the shapes `[batch_size x s]` for each s in `state_size`.
     """
     state_size = self.state_size
-    if isinstance(state_size, (list, tuple)):
-      zeros = tuple(
-          array_ops.zeros(array_ops.pack([batch_size, s]), dtype=dtype)
-          for s in state_size)
-      for s, z in zip(state_size, zeros):
-        z.set_shape([None, s])
+    if nest.is_sequence(state_size):
+      state_size_flat = nest.flatten(state_size)
+      zeros_flat = [
+          array_ops.zeros(
+              array_ops.pack(_state_size_with_prefix(s, prefix=[batch_size])),
+              dtype=dtype)
+          for s in state_size_flat]
+      for s, z in zip(state_size_flat, zeros_flat):
+        z.set_shape(_state_size_with_prefix(s, prefix=[None]))
+      zeros = nest.pack_sequence_as(structure=state_size,
+                                    flat_sequence=zeros_flat)
     else:
-      zeros = array_ops.zeros(
-          array_ops.pack([batch_size, state_size]), dtype=dtype)
-      zeros.set_shape([None, state_size])
+      zeros_size = _state_size_with_prefix(state_size, prefix=[batch_size])
+      zeros = array_ops.zeros(array_ops.pack(zeros_size), dtype=dtype)
+      zeros.set_shape(_state_size_with_prefix(state_size, prefix=[None]))
 
     return zeros
 
@@ -173,6 +227,19 @@ class GRUCell(RNNCell):
     return new_h, new_h
 
 
+_LSTMStateTuple = collections.namedtuple("LSTMStateTuple", ("c", "h"))
+
+
+class LSTMStateTuple(_LSTMStateTuple):
+  """Tuple used by LSTM Cells for `state_size`, `zero_state`, and output state.
+
+  Stores two elements: `(c, h)`, in that order.
+
+  Only used when `state_is_tuple=True`.
+  """
+  __slots__ = ()
+
+
 class BasicLSTMCell(RNNCell):
   """Basic LSTM recurrent network cell.
 
@@ -213,8 +280,8 @@ class BasicLSTMCell(RNNCell):
 
   @property
   def state_size(self):
-    return ((self._num_units, self._num_units) if self._state_is_tuple
-            else 2 * self._num_units)
+    return (LSTMStateTuple(self._num_units, self._num_units)
+            if self._state_is_tuple else 2 * self._num_units)
 
   @property
   def output_size(self):
@@ -238,7 +305,7 @@ class BasicLSTMCell(RNNCell):
       new_h = self._activation(new_c) * sigmoid(o)
 
       if self._state_is_tuple:
-        new_state = (new_c, new_h)
+        new_state = LSTMStateTuple(new_c, new_h)
       else:
         new_state = array_ops.concat(1, [new_c, new_h])
       return new_h, new_state
@@ -304,7 +371,7 @@ class LSTMCell(RNNCell):
 
   def __init__(self, num_units, input_size=None,
                use_peepholes=False, cell_clip=None,
-               initializer=None, num_proj=None,
+               initializer=None, num_proj=None, proj_clip=None,
                num_unit_shards=1, num_proj_shards=1,
                forget_bias=1.0, state_is_tuple=False,
                activation=tanh):
@@ -320,6 +387,9 @@ class LSTMCell(RNNCell):
         projection matrices.
       num_proj: (optional) int, The output dimensionality for the projection
         matrices.  If None, no projection is performed.
+      proj_clip: (optional) A float value.  If `num_proj > 0` and `proj_clip` is
+      provided, then the projected values are clipped elementwise to within
+      `[-proj_clip, proj_clip]`.
       num_unit_shards: How to split the weight matrix.  If >1, the weight
         matrix is stored across num_unit_shards.
       num_proj_shards: How to split the projection matrix.  If >1, the
@@ -343,6 +413,7 @@ class LSTMCell(RNNCell):
     self._cell_clip = cell_clip
     self._initializer = initializer
     self._num_proj = num_proj
+    self._proj_clip = proj_clip
     self._num_unit_shards = num_unit_shards
     self._num_proj_shards = num_proj_shards
     self._forget_bias = forget_bias
@@ -351,11 +422,13 @@ class LSTMCell(RNNCell):
 
     if num_proj:
       self._state_size = (
-          (num_units, num_proj) if state_is_tuple else num_units + num_proj)
+          LSTMStateTuple(num_units, num_proj)
+          if state_is_tuple else num_units + num_proj)
       self._output_size = num_proj
     else:
       self._state_size = (
-          (num_units, num_units) if state_is_tuple else 2 * num_units)
+          LSTMStateTuple(num_units, num_units)
+          if state_is_tuple else 2 * num_units)
       self._output_size = num_units
 
   @property
@@ -450,8 +523,13 @@ class LSTMCell(RNNCell):
             dtype, self._num_proj_shards)
 
         m = math_ops.matmul(m, concat_w_proj)
+        if self._proj_clip is not None:
+          # pylint: disable=invalid-unary-operand-type
+          m = clip_ops.clip_by_value(m, -self._proj_clip, self._proj_clip)
+          # pylint: enable=invalid-unary-operand-type
 
-    new_state = (c, m) if self._state_is_tuple else array_ops.concat(1, [c, m])
+    new_state = (LSTMStateTuple(c, m) if self._state_is_tuple
+                 else array_ops.concat(1, [c, m]))
     return m, new_state
 
 
@@ -590,7 +668,7 @@ class DropoutWrapper(RNNCell):
     if (not isinstance(self._input_keep_prob, float) or
         self._input_keep_prob < 1):
       inputs = nn_ops.dropout(inputs, self._input_keep_prob, seed=self._seed)
-    output, new_state = self._cell(inputs, state)
+    output, new_state = self._cell(inputs, state, scope)
     if (not isinstance(self._output_keep_prob, float) or
         self._output_keep_prob < 1):
       output = nn_ops.dropout(output, self._output_keep_prob, seed=self._seed)
@@ -634,6 +712,10 @@ class EmbeddingWrapper(RNNCell):
   def state_size(self):
     return self._cell.state_size
 
+  @property
+  def output_size(self):
+    return self._cell.output_size
+
   def __call__(self, inputs, state, scope=None):
     """Run the cell on embedded inputs."""
     with vs.variable_scope(scope or type(self).__name__):  # "EmbeddingWrapper"
@@ -675,7 +757,7 @@ class MultiRNNCell(RNNCell):
     self._cells = cells
     self._state_is_tuple = state_is_tuple
     if not state_is_tuple:
-      if any(isinstance(c.state_size, (list, tuple)) for c in self._cells):
+      if any(nest.is_sequence(c.state_size) for c in self._cells):
         raise ValueError("Some cells return tuples of states, but the flag "
                          "state_is_tuple is not set.  State sizes are: %s"
                          % str([c.state_size for c in self._cells]))
@@ -700,7 +782,7 @@ class MultiRNNCell(RNNCell):
       for i, cell in enumerate(self._cells):
         with vs.variable_scope("Cell%d" % i):
           if self._state_is_tuple:
-            if not isinstance(state, (list, tuple)):
+            if not nest.is_sequence(state):
               raise ValueError(
                   "Expected state to be a tuple of length %d, but received: %s"
                   % (len(self.state_size), state))
@@ -716,7 +798,7 @@ class MultiRNNCell(RNNCell):
     return cur_inp, new_states
 
 
-class SlimRNNCell(RNNCell):
+class _SlimRNNCell(RNNCell):
   """A simple wrapper for slim.rnn_cells."""
 
   def __init__(self, cell_fn):
@@ -778,9 +860,9 @@ def _linear(args, output_size, bias, bias_start=0.0, scope=None):
   Raises:
     ValueError: if some of the arguments has unspecified or wrong shape.
   """
-  if args is None or (isinstance(args, (list, tuple)) and not args):
+  if args is None or (nest.is_sequence(args) and not args):
     raise ValueError("`args` must be specified")
-  if not isinstance(args, (list, tuple)):
+  if not nest.is_sequence(args):
     args = [args]
 
   # Calculate the total size of arguments on dimension 1.

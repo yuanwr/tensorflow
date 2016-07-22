@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,10 +18,14 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+
 from tensorflow.contrib.framework.python.ops import add_arg_scope as contrib_add_arg_scope
+from tensorflow.python import pywrap_tensorflow
 from tensorflow.python.framework import device as tf_device
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import control_flow_ops
 from tensorflow.python.ops import init_ops
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.ops import variables
@@ -31,6 +35,8 @@ from tensorflow.python.platform import tf_logging as logging
 __all__ = ['add_model_variable',
            'assert_global_step',
            'assert_or_get_global_step',
+           'assign_from_checkpoint',
+           'assign_from_values',
            'create_global_step',
            'get_global_step',
            'get_or_create_global_step',
@@ -223,10 +229,6 @@ def variable(name, shape=None, dtype=dtypes.float32, initializer=None,
                                        collections=collections,
                                        caching_device=caching_device)
 
-# TODO(sguada) move it to ops.GraphKeys or to contrib.framework.GraphKeys
-# Collection containing all the variables created using model_variables.
-MODEL_VARIABLES = '_model_variables_'
-
 
 @contrib_add_arg_scope
 def model_variable(name, shape=None, dtype=dtypes.float32, initializer=None,
@@ -245,8 +247,8 @@ def model_variable(name, shape=None, dtype=dtypes.float32, initializer=None,
     trainable: If `True` also add the variable to the graph collection
       `GraphKeys.TRAINABLE_VARIABLES` (see tf.Variable).
     collections: A list of collection names to which the Variable will be added.
-      Note that the variable is always also added to the tf.GraphKeys.VARIABLES
-      and MODEL_VARIABLES collections.
+      Note that the variable is always also added to the `GraphKeys.VARIABLES`
+      and `GraphKeys.MODEL_VARIABLES` collections.
     caching_device: Optional device string or function describing where the
         Variable should be cached for reading.  Defaults to the Variable's
         device.
@@ -257,9 +259,7 @@ def model_variable(name, shape=None, dtype=dtypes.float32, initializer=None,
     The created or existing variable.
   """
   collections = list(collections or [])
-
-  # Make sure variables are added to tf.GraphKeys.VARIABLES and MODEL_VARIABLES
-  collections += [ops.GraphKeys.VARIABLES, MODEL_VARIABLES]
+  collections += [ops.GraphKeys.VARIABLES, ops.GraphKeys.MODEL_VARIABLES]
   return variable(name, shape=shape, dtype=dtype,
                   initializer=initializer, regularizer=regularizer,
                   trainable=trainable, collections=collections,
@@ -267,13 +267,13 @@ def model_variable(name, shape=None, dtype=dtypes.float32, initializer=None,
 
 
 def add_model_variable(var):
-  """Adds a variable to the MODEL_VARIABLES collection.
+  """Adds a variable to the `GraphKeys.MODEL_VARIABLES` collection.
 
   Args:
     var: a variable.
   """
-  if var not in ops.get_collection(MODEL_VARIABLES):
-    ops.add_to_collection(MODEL_VARIABLES, var)
+  if var not in ops.get_collection(ops.GraphKeys.MODEL_VARIABLES):
+    ops.add_to_collection(ops.GraphKeys.MODEL_VARIABLES, var)
 
 
 def get_variables(scope=None, suffix=None, collection=ops.GraphKeys.VARIABLES):
@@ -304,7 +304,7 @@ def get_model_variables(scope=None, suffix=None):
   Returns:
     a list of variables in colelction with scope and suffix.
   """
-  return get_variables(scope, suffix, MODEL_VARIABLES)
+  return get_variables(scope, suffix, ops.GraphKeys.MODEL_VARIABLES)
 
 
 def get_local_variables(scope=None, suffix=None):
@@ -406,6 +406,107 @@ def get_unique_variable(var_op_name):
                    var_op_name)
 
 
+def assign_from_values(var_names_to_values):
+  """Creates an assignment operation from a given mapping.
+
+  This function provides a mechanism for performing assignment of variables
+  to values in a way that does not fill the graph with large assignment values.
+
+  Args:
+    var_names_to_values: A map from variable names to values.
+
+  Returns:
+    assign_op: An `Operation` that assigns each of the given variables to the
+      requested values.
+    feed_dict: The feed dictionary to use when evaluating `assign_op`.
+
+  Raises:
+    ValueError: if any of the given variable names were not found.
+  """
+  feed_dict = {}
+  assign_ops = []
+
+  for var_name in var_names_to_values:
+    var_value = var_names_to_values[var_name]
+    var = ops.get_collection(ops.GraphKeys.VARIABLES, var_name)
+    if not var:
+      raise ValueError('Variable %s wasnt found', var_name)
+    elif len(var) > 1:
+      # tf.get_collection is just a filter on the prefix: find the exact match:
+      found = False
+      for v in var:
+        if v.op.name == var_name:
+          var = v
+          found = True
+          break
+
+      if not found:
+        raise ValueError('Variable %s doesnt uniquely identify a variable',
+                         var_name)
+    else:
+      var = var[0]
+
+    # TODO(nsilberman): ensure placeholder and assign are on the same device.
+    # Assign a placeholder to the value that will be filled later.
+    placeholder_name = 'placeholder/' + var.op.name
+    placeholder_value = array_ops.placeholder(
+        dtype=var.dtype.base_dtype,
+        shape=var.get_shape(),
+        name=placeholder_name)
+    assign_ops.append(var.assign(placeholder_value))
+
+    feed_dict[placeholder_value] = var_value.reshape(var.get_shape())
+
+  assign_op = control_flow_ops.group(*assign_ops)
+  return assign_op, feed_dict
+
+
+# TODO(nsilberman): add flag to load exponential moving averages instead
+def assign_from_checkpoint(model_path, var_list):
+  """Creates an operation to assign specific variables from a checkpoint.
+
+  Args:
+    model_path: The full path to the model checkpoint. To get latest checkpoint
+        use `model_path = tf.train.latest_checkpoint(checkpoint_dir)`
+    var_list: A list of `Variable` objects or a dictionary mapping names in the
+        checkpoint to the correspoing variables to initialize. If empty or None,
+        it would return  no_op(), None.
+
+  Returns:
+    the restore_op and the feed_dict that need to be run to restore var_list.
+
+  Raises:
+    ValueError: If the checkpoint specified at `model_path` is missing one of
+      the variables in `var_list`.
+  """
+  reader = pywrap_tensorflow.NewCheckpointReader(model_path)
+
+  if isinstance(var_list, (tuple, list)):
+    var_list = {var.op.name: var for var in var_list}
+
+  feed_dict = {}
+  assign_ops = []
+
+  for checkpoint_var_name in var_list:
+    var = var_list[checkpoint_var_name]
+    if not reader.has_tensor(checkpoint_var_name):
+      raise ValueError(
+          'Checkpoint is missing variable [%s]' % checkpoint_var_name)
+
+    var_value = reader.get_tensor(checkpoint_var_name)
+    placeholder_name = 'placeholder/' + var.op.name
+    placeholder_value = array_ops.placeholder(
+        dtype=var.dtype.base_dtype,
+        shape=var.get_shape(),
+        name=placeholder_name)
+    assign_ops.append(var.assign(placeholder_value))
+
+    feed_dict[placeholder_value] = var_value.reshape(var.get_shape())
+
+  assign_op = control_flow_ops.group(*assign_ops)
+  return assign_op, feed_dict
+
+
 class VariableDeviceChooser(object):
   """Device chooser for variables.
 
@@ -415,6 +516,7 @@ class VariableDeviceChooser(object):
 
   def __init__(self,
                num_tasks=0,
+               job_name='ps',
                device_type='CPU',
                device_index=0):
     """Initialize VariableDeviceChooser.
@@ -429,22 +531,23 @@ class VariableDeviceChooser(object):
 
     Args:
       num_tasks: number of tasks.
+      job_name: String, a name for the parameter server job.
       device_type: Optional device type string (e.g. "CPU" or "GPU")
       device_index: int.  Optional device index.  If left
         unspecified, device represents 'any' device_index.
     """
-    self._job_name = 'ps' if num_tasks > 0 else None
+    self._job_name = job_name
     self._device_type = device_type
     self._device_index = device_index
     self._num_tasks = num_tasks
     self._next_task_id = 0
 
   def __call__(self, op):
-    device_spec = tf_device.DeviceSpec(job=self._job_name,
-                                       device_type=self._device_type,
+    device_spec = tf_device.DeviceSpec(device_type=self._device_type,
                                        device_index=self._device_index)
     if self._num_tasks > 0:
       task_id = self._next_task_id
       self._next_task_id = (self._next_task_id + 1) % self._num_tasks
+      device_spec.job = self._job_name
       device_spec.task = task_id
     return device_spec.to_string()

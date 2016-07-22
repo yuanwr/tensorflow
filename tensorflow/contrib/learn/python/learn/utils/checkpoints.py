@@ -1,4 +1,4 @@
-# Copyright 2015 Google Inc. All Rights Reserved.
+# Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """Tools to work with checkpoints."""
 
 from __future__ import absolute_import
@@ -66,6 +67,9 @@ def load_variable(checkpoint_dir, name):
   Returns:
     `Tensor` object.
   """
+  # TODO(b/29227106): Fix this in the right place and remove this.
+  if name.endswith(":0"):
+    name = name[:-2]
   reader = load_checkpoint(checkpoint_dir)
   return reader.get_tensor(name)
 

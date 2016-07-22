@@ -15,6 +15,7 @@ exports_files(["LICENSE"])
 
 cc_library(
     name = "benchmark_model_lib",
+    testonly = 1,
     srcs = [
         "benchmark_model.cc",
     ],
@@ -26,6 +27,7 @@ cc_library(
     deps = select({
         "//tensorflow:android": [
             "//tensorflow/core:android_tensorflow_lib",
+            "//tensorflow/core:android_tensorflow_test_lib",
         ],
         "//conditions:default": [
             "//tensorflow/core:core_cpu",
@@ -34,6 +36,7 @@ cc_library(
             "//tensorflow/core:framework_internal",
             "//tensorflow/core:protos_all_cc",
             "//tensorflow/core:tensorflow",
+            "//tensorflow/core:test",
         ],
     }),
 )
@@ -61,11 +64,12 @@ tf_cc_test(
 # --host_crosstool_top=@bazel_tools//tools/cpp:toolchain
 #
 # NOTE: currently '-pthread' must be removed from the LINK_OPTS variable
-# in google/protobuf/BUILD to sucessfully build for Android. This is temporary
-# pending an update of the version of the protobuf library that Tensorflow
+# in @protobuf//:BUILD to sucessfully build for Android. This is temporary
+# pending an update of the version of the protobuf library that TensorFlow
 # uses.
 cc_binary(
     name = "benchmark_model",
+    testonly = 1,
     srcs = ["benchmark_model_main.cc"],
     copts = tf_copts(),
     linkopts = select({

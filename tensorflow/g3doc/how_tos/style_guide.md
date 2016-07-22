@@ -1,6 +1,6 @@
 # TensorFlow Style Guide
 
-This page contains style decisions that both developers and users of Tensorflow
+This page contains style decisions that both developers and users of TensorFlow
 should follow to increase the readability of their code, reduce the number of
 errors, and promote consistency.
 
@@ -21,8 +21,8 @@ except for using 2 spaces.
 
 ```
 from __future__ import absolute_import
-from __future__ import print_function
 from __future__ import division
+from __future__ import print_function
 ```
 
 * Use `six` to write compatible code (for example `six.range`).
@@ -92,8 +92,8 @@ creates a part of the graph and returns output tensors.
  If operation needs to save some `Tensor`s to Graph collections,
  put the arguments with names of the collections right before `name` argument.
 
-* Tensor arguments should be either a single tensor or an iterable of tensors,
-  not both.  E.g. a "Tensor or list of Tensors" is too broad.
+* Tensor arguments should be either a single tensor or an iterable of tensors.
+  E.g. a "Tensor or list of Tensors" is too broad. See `assert_proper_iterable`.
 
 * Operations that take tensors as arguments should call `convert_to_tensor`
  to convert non-tensor inputs into tensors if they are using C++ operations.
